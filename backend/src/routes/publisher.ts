@@ -1,0 +1,570 @@
+import { Router, Request, Response } from 'express';
+import { query } from '../db/client';
+import { v4 as uuidv4 } from 'uuid';
+import { publishViaApi } from '../services/threadsApiService';
+import { fetchTrendingTopics, generateTopicsWithAI } from '../services/trendsService';
+import { runPipelineForTopic, composeForTopic, BrandProfile, callMiniMax } from '../services/agentPipeline';
+import { getAccounts, getActiveAccount } from '../services/threadsAuth';
+
+async function publishPost(content: string): Promise<{ success: boolean; error?: string }> {
+  return publishViaApi(content);
+}
+
+const router = Router();
+
+// ═══════════════════════════════════════════
+// Publisher Accounts（轉接至 Cookie 帳號系統）
+// ═══════════════════════════════════════════
+
+// GET /api/pub/accounts — 轉接至 /api/auth/accounts
+router.get('/accounts', async (_req: Request, res: Response) => {
+  try {
+    const accounts = await getAccounts();
+    res.json({ accounts, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得帳號列表失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Brand Profile
+// ═══════════════════════════════════════════
+
+// POST /api/pub/brand-profile/suggest — AI 一鍵建議品牌設定
+router.post('/brand-profile/suggest', async (req: Request, res: Response) => {
+  try {
+    const { description, profile_mode = 'brand' } = req.body;
+    if (!description?.trim()) return res.status(400).json({ error: '請提供描述' });
+
+    let systemPrompt: string;
+    let userPrompt: string;
+
+    if (profile_mode === 'persona') {
+      systemPrompt = `你是人設策略顧問，擅長為 Threads 社群媒體建立吸引人的個人品牌人設。
+請根據使用者描述，生成完整的人設設定，以 JSON 格式回應，不要有任何說明文字，直接輸出 JSON。`;
+      userPrompt = `根據以下描述，幫我建立 Threads 發文人設，以 JSON 格式輸出：
+{
+  "persona_name": "人設姓名（中文名）",
+  "occupation": "職業（具體一點）",
+  "personality": "個性描述（2-3句，具體生動）",
+  "catchphrase": "常用口頭禪（2-3個，用逗號分隔）",
+  "lifestyle": "生活方式（2-3句）",
+  "personal_background": "個人背景故事（3-5句，要有故事性）",
+  "tone_description": "語氣風格（2-3句）",
+  "keywords": "常聊話題關鍵字（5-8個，逗號分隔）",
+  "target_audience": "主要讀者族群（具體描述）",
+  "writing_directions": "發文風格方向（2-3句建議）",
+  "example_post": "一則範例貼文（150字內，符合人設風格的 Threads 貼文）",
+  "posting_notes": "發文注意事項（2-3條）"
+}
+
+使用者描述：${description.trim()}`;
+    } else {
+      systemPrompt = `你是品牌策略顧問，擅長為 Threads 社群媒體制定品牌內容策略。
+請根據使用者描述，生成完整的品牌設定，以 JSON 格式回應，不要有任何說明文字，直接輸出 JSON。`;
+      userPrompt = `根據以下描述，幫我填寫品牌設定，以 JSON 格式輸出：
+{
+  "brand_name": "品牌名稱",
+  "industry": "產業類別（具體）",
+  "tone_description": "語氣風格描述（2-3句，例如：親切幽默、專業但不失人味）",
+  "keywords": "核心關鍵字（5-8個，逗號分隔）",
+  "avoid_topics": "建議避免的話題（2-3項）",
+  "target_audience": "目標受眾（具體描述，含年齡層、職業、痛點）",
+  "writing_directions": "寫作方向建議（2-3句，具體說明內容策略）",
+  "example_post": "一則範例貼文（150字內，符合品牌調性的 Threads 貼文）",
+  "posting_notes": "產文備註（2-3條 AI 嚴格遵守的規則）"
+}
+
+品牌描述：${description.trim()}`;
+    }
+
+    const raw = await callMiniMax(systemPrompt, userPrompt);
+
+    // 解析 JSON
+    let suggestion: Record<string, any> = {};
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (match) suggestion = JSON.parse(match[0]);
+    } catch {
+      return res.status(500).json({ error: 'AI 回應解析失敗，請重試' });
+    }
+
+    res.json({ suggestion, success: true });
+  } catch (err: any) {
+    console.error('Brand suggest error:', err);
+    res.status(500).json({ error: `AI 建議失敗: ${err.message}` });
+  }
+});
+
+// GET /api/pub/brand-profile
+router.get('/brand-profile', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    const result = await query(
+      'SELECT * FROM brand_profiles WHERE workspace_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [workspace_id]
+    );
+    res.json({ profile: result.rows[0] || null, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得品牌設定失敗' });
+  }
+});
+
+// POST /api/pub/brand-profile — upsert
+router.post('/brand-profile', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, id, publisher_account_id, created_at, updated_at, ...fields } = req.body;
+    if (!workspace_id) return res.status(400).json({ error: '缺少 workspace_id' });
+
+    const profileId = id || uuidv4();
+    const existing = id
+      ? await query('SELECT id FROM brand_profiles WHERE id = $1', [id])
+      : await query('SELECT id FROM brand_profiles WHERE workspace_id = $1', [workspace_id]);
+
+    const targetId = existing.rows[0]?.id || profileId;
+
+    if (existing.rows.length > 0) {
+      const setClause = Object.keys(fields)
+        .map((k, i) => `${k} = $${i + 2}`)
+        .join(', ');
+      await query(
+        `UPDATE brand_profiles SET ${setClause}, updated_at = NOW() WHERE id = $1`,
+        [targetId, ...Object.values(fields)]
+      );
+    } else {
+      const cols = ['id', 'workspace_id', 'publisher_account_id', ...Object.keys(fields)];
+      const vals = [profileId, workspace_id, publisher_account_id || null, ...Object.values(fields)];
+      await query(
+        `INSERT INTO brand_profiles (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')})`,
+        vals
+      );
+    }
+
+    const result = await query('SELECT * FROM brand_profiles WHERE id = $1', [existing.rows[0]?.id || profileId]);
+    res.json({ profile: result.rows[0], success: true });
+  } catch (err) {
+    console.error('Upsert brand profile error:', err);
+    res.status(500).json({ error: '儲存品牌設定失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Trending Topics
+// ═══════════════════════════════════════════
+
+// GET /api/pub/trending
+router.get('/trending', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    const result = await query(
+      'SELECT * FROM trending_topics WHERE workspace_id = $1 ORDER BY trend_score DESC, created_at DESC LIMIT 30',
+      [workspace_id]
+    );
+    res.json({ topics: result.rows, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得話題失敗' });
+  }
+});
+
+// POST /api/pub/trending/fetch
+router.post('/trending/fetch', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.body;
+    if (!workspace_id) return res.status(400).json({ error: '缺少 workspace_id' });
+
+    // Get brand profile for AI fallback
+    const profileRes = await query(
+      'SELECT * FROM brand_profiles WHERE workspace_id = $1 LIMIT 1',
+      [workspace_id]
+    );
+    const profile = profileRes.rows[0];
+
+    const topics = await fetchTrendingTopics(profile ? {
+      brand_name: profile.brand_name || '品牌',
+      industry: profile.industry || '科技',
+      target_audience: profile.target_audience || '台灣用戶',
+    } : undefined);
+
+    // Clear old topics and insert new ones
+    await query('DELETE FROM trending_topics WHERE workspace_id = $1', [workspace_id]);
+
+    const inserted = [];
+    for (const t of topics) {
+      const id = uuidv4();
+      const r = await query(
+        `INSERT INTO trending_topics (id, workspace_id, source, title, description, trend_score, fetched_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [id, workspace_id, t.source, t.title, t.description, t.trend_score, Date.now()]
+      );
+      inserted.push(r.rows[0]);
+    }
+
+    res.json({ topics: inserted, count: inserted.length, success: true });
+  } catch (err) {
+    console.error('Fetch trending error:', err);
+    res.status(500).json({ error: '抓取話題失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Compose & Publish
+// ═══════════════════════════════════════════
+
+// POST /api/pub/compose — AI 生成貼文內容
+router.post('/compose', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, topic, publisher_account_id } = req.body;
+    if (!topic) return res.status(400).json({ error: '缺少話題' });
+    // Bug #17：限制 topic 長度，避免 AI API 超時或失敗
+    if (typeof topic !== 'string' || topic.trim().length < 2 || topic.trim().length > 500) {
+      return res.status(400).json({ error: 'topic 長度應為 2–500 字' });
+    }
+
+    const profileRes = await query(
+      'SELECT * FROM brand_profiles WHERE workspace_id = $1 LIMIT 1',
+      [workspace_id]
+    );
+    const profile: BrandProfile = profileRes.rows[0] || {
+      profile_mode: 'brand', brand_name: '品牌', industry: '科技',
+      tone_description: '親切自然', keywords: '', avoid_topics: '',
+      target_audience: '台灣用戶', writing_directions: '', example_post: '', posting_notes: '',
+    };
+
+    const fakeTopic = { title: topic, description: '', source: 'manual', trend_score: 100 };
+    const draft = await composeForTopic(profile, fakeTopic);
+
+    if (!draft) return res.status(500).json({ error: '內容生成失敗' });
+    res.json({ content: draft.content, angle: draft.angle, risk_level: draft.risk_level, audit_notes: draft.audit_notes, success: true });
+  } catch (err) {
+    console.error('Compose error:', err);
+    res.status(500).json({ error: 'AI 產文失敗' });
+  }
+});
+
+// POST /api/pub/publish — 立即發布（Cookie 模式）
+router.post('/publish', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, content, draft_id } = req.body;
+    if (!content) return res.status(400).json({ error: '缺少貼文內容' });
+
+    const result = await publishPost(content);
+
+    if (result.success) {
+      await query(
+        `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, threads_post_id, status, published_at)
+         VALUES ($1,$2,NULL,$3,'','success',$4)`,
+        [uuidv4(), workspace_id, content, Date.now()]
+      );
+      if (draft_id) {
+        await query(
+          'UPDATE auto_drafts SET status=$1, published_at=$2, updated_at=NOW() WHERE id=$3',
+          ['published', Date.now(), draft_id]
+        );
+      }
+      res.json({ success: true });
+    } else {
+      await query(
+        `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, status, error_message, published_at)
+         VALUES ($1,$2,NULL,$3,'failed',$4,$5)`,
+        [uuidv4(), workspace_id, content, result.error, Date.now()]
+      );
+      res.status(500).json({ error: result.error });
+    }
+  } catch (err) {
+    console.error('Publish error:', err);
+    res.status(500).json({ error: '發布失敗' });
+  }
+});
+
+// POST /api/pub/schedule
+router.post('/schedule', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, content, scheduled_at } = req.body;
+    if (!content || !scheduled_at) return res.status(400).json({ error: '缺少必要參數' });
+
+    const id = uuidv4();
+    const result = await query(
+      `INSERT INTO auto_scheduled_posts (id, workspace_id, publisher_account_id, content, scheduled_at)
+       VALUES ($1,$2,NULL,$3,$4) RETURNING *`,
+      [id, workspace_id, content, scheduled_at]
+    );
+    res.json({ post: result.rows[0], success: true });
+  } catch (err) {
+    res.status(500).json({ error: '排程失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Scheduled Posts
+// ═══════════════════════════════════════════
+
+// GET /api/pub/scheduled
+router.get('/scheduled', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    const result = await query(
+      `SELECT s.*, p.threads_username as account_name
+       FROM auto_scheduled_posts s
+       LEFT JOIN publisher_accounts p ON s.publisher_account_id = p.id
+       WHERE s.workspace_id = $1 ORDER BY s.scheduled_at ASC`,
+      [workspace_id]
+    );
+    res.json({ posts: result.rows, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得排程失敗' });
+  }
+});
+
+// DELETE /api/pub/scheduled/:id
+router.delete('/scheduled/:id', async (req: Request, res: Response) => {
+  try {
+    await query("UPDATE auto_scheduled_posts SET status='cancelled', updated_at=NOW() WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取消排程失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Post History
+// ═══════════════════════════════════════════
+
+// GET /api/pub/history
+router.get('/history', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    const result = await query(
+      `SELECT h.*, p.threads_username as account_name
+       FROM auto_post_history h
+       LEFT JOIN publisher_accounts p ON h.publisher_account_id = p.id
+       WHERE h.workspace_id = $1 ORDER BY h.published_at DESC LIMIT 50`,
+      [workspace_id]
+    );
+    res.json({ history: result.rows, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得發文歷史失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// AI Drafts
+// ═══════════════════════════════════════════
+
+// GET /api/pub/drafts
+router.get('/drafts', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, status } = req.query;
+    const conditions = ['d.workspace_id = $1'];
+    const params: any[] = [workspace_id];
+    if (status) { conditions.push(`d.status = $2`); params.push(status); }
+
+    const result = await query(
+      `SELECT d.*, p.threads_username as account_name
+       FROM auto_drafts d
+       LEFT JOIN publisher_accounts p ON d.publisher_account_id = p.id
+       WHERE ${conditions.join(' AND ')} ORDER BY d.created_at DESC`,
+      params
+    );
+    res.json({ drafts: result.rows, success: true });
+  } catch (err) {
+    res.status(500).json({ error: '取得草稿失敗' });
+  }
+});
+
+// POST /api/pub/drafts/:id/publish
+router.post('/drafts/:id/publish', async (req: Request, res: Response) => {
+  try {
+    const { content: overrideContent } = req.body;
+    const draftRes = await query('SELECT * FROM auto_drafts WHERE id = $1', [req.params.id]);
+    if (draftRes.rows.length === 0) return res.status(404).json({ error: '草稿不存在' });
+
+    const draft = draftRes.rows[0];
+    const content = overrideContent || draft.content;
+
+    const publishResult = await publishPost(content);
+
+    if (publishResult.success) {
+      await query(
+        'UPDATE auto_drafts SET status=$1, published_at=$2, content=$3, updated_at=NOW() WHERE id=$4',
+        ['published', Date.now(), content, req.params.id]
+      );
+      await query(
+        `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, threads_post_id, status, published_at)
+         VALUES ($1,$2,NULL,$3,'','success',$4)`,
+        [uuidv4(), draft.workspace_id, content, Date.now()]
+      );
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: publishResult.error });
+    }
+  } catch (err) {
+    res.status(500).json({ error: '發布草稿失敗' });
+  }
+});
+
+// POST /api/pub/drafts/:id/reject
+router.post('/drafts/:id/reject', async (req: Request, res: Response) => {
+  try {
+    await query("UPDATE auto_drafts SET status='rejected', updated_at=NOW() WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '捨棄草稿失敗' });
+  }
+});
+
+// DELETE /api/pub/drafts — delete all
+router.delete('/drafts', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    await query('DELETE FROM auto_drafts WHERE workspace_id = $1', [workspace_id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: '刪除草稿失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// AI Agent
+// ═══════════════════════════════════════════
+
+// POST /api/pub/agent/run
+router.post('/agent/run', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, publisher_account_id } = req.body;
+    if (!workspace_id) return res.status(400).json({ error: '缺少 workspace_id' });
+
+    // Get brand profile
+    const profileRes = await query('SELECT * FROM brand_profiles WHERE workspace_id = $1 LIMIT 1', [workspace_id]);
+    if (profileRes.rows.length === 0) return res.status(400).json({ error: '請先設定品牌設定' });
+    const profile: BrandProfile = profileRes.rows[0];
+
+    // 取得話題：DB 現有話題 + 即時生成的品牌相關話題
+    const profileAny = profile as any;
+    const dbTopicsRes = await query(
+      'SELECT * FROM trending_topics WHERE workspace_id = $1 ORDER BY trend_score DESC LIMIT 10',
+      [workspace_id]
+    );
+
+    // 即時生成品牌相關話題（不管 DB 有無都加）
+    let brandTopics: Array<{ id: string | undefined; title: string; description: string; source: string; trend_score: number }> = [];
+    try {
+      const aiTopicList = await generateTopicsWithAI({
+        brand_name: profileAny.brand_name || '品牌',
+        industry: profileAny.industry || '科技',
+        target_audience: profileAny.target_audience || '台灣用戶',
+      });
+      brandTopics = aiTopicList.map(t => ({ id: undefined, ...t }));
+      console.log(`[Agent] AI 生成 ${brandTopics.length} 則品牌話題`);
+    } catch (e) {
+      console.warn('[Agent] AI 品牌話題生成失敗:', e);
+    }
+
+    // 合併：品牌話題優先，再加 DB 話題
+    const allTopics = [...brandTopics, ...dbTopicsRes.rows];
+    if (allTopics.length === 0) {
+      return res.status(500).json({ error: '無法取得話題，請先至熱門話題頁面抓取' });
+    }
+
+    // Immediately return and run pipeline in background
+    res.json({ message: `正在執行 Agent Pipeline（${allTopics.length} 則話題），請稍後查看草稿列表`, success: true });
+
+    // Run pipeline for each topic (async, non-blocking)
+    (async () => {
+      let generated = 0;
+      const maxDrafts = profileAny.posts_per_day || 3;
+      const autoPostMode = profileAny.auto_post_mode || 'manual';
+      const profileId = profileAny.id || null;
+
+      for (const topic of allTopics) {
+        if (generated >= maxDrafts) break;
+        try {
+          const draftOutput = await runPipelineForTopic(profile, {
+            id: topic.id,
+            title: topic.title,
+            description: topic.description,
+            source: topic.source,
+            trend_score: topic.trend_score,
+          });
+
+          if (!draftOutput) continue;
+
+          const autoPost = autoPostMode === 'auto';
+
+          if (autoPost) {
+            // Auto-publish via API (fallback to Cookie)
+            const pubResult = await publishPost(draftOutput.content);
+            const status = pubResult.success ? 'auto_published' : 'pending_review';
+            await query(
+              `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status, threads_post_id, published_at)
+               VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'',$12)`,
+              [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
+               draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
+               draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes, status,
+               pubResult.success ? Date.now() : 0]
+            );
+            if (pubResult.success) {
+              await query(
+                `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, threads_post_id, status, published_at)
+                 VALUES ($1,$2,NULL,$3,'','success',$4)`,
+                [uuidv4(), workspace_id, draftOutput.content, Date.now()]
+              );
+            }
+          } else {
+            // Save as pending_review
+            await query(
+              `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status)
+               VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,'pending_review')`,
+              [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
+               draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
+               draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes]
+            );
+          }
+          generated++;
+        } catch (err) {
+          console.error(`[Agent] 話題 "${topic.title}" 處理失敗:`, err);
+        }
+      }
+      console.log(`[Agent] 完成，生成 ${generated} 則草稿`);
+    })();
+  } catch (err) {
+    console.error('Agent run error:', err);
+    res.status(500).json({ error: 'Agent 執行失敗' });
+  }
+});
+
+// ═══════════════════════════════════════════
+// Dashboard Stats
+// ═══════════════════════════════════════════
+
+// GET /api/pub/dashboard
+router.get('/dashboard', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+
+    const [cookieAccounts, scheduled, recentHistory, pendingDrafts] = await Promise.all([
+      query('SELECT id, name, username, is_active FROM accounts ORDER BY created_at ASC'),
+      query("SELECT COUNT(*) as count FROM auto_scheduled_posts WHERE workspace_id = $1 AND status='pending'", [workspace_id]),
+      query('SELECT * FROM auto_post_history WHERE workspace_id = $1 ORDER BY published_at DESC LIMIT 5', [workspace_id]),
+      query("SELECT COUNT(*) as count FROM auto_drafts WHERE workspace_id = $1 AND status='pending_review'", [workspace_id]),
+    ]);
+
+    const activeAccount = cookieAccounts.rows.find((a: any) => a.is_active);
+
+    res.json({
+      stats: {
+        account_count: cookieAccounts.rows.length,
+        scheduled_count: parseInt(scheduled.rows[0]?.count || '0'),
+        recent_post_count: recentHistory.rows.length,
+        pending_draft_count: parseInt(pendingDrafts.rows[0]?.count || '0'),
+        active_account: activeAccount?.name || null,
+      },
+      recent_history: recentHistory.rows,
+      accounts: cookieAccounts.rows,
+      success: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: '取得總覽失敗' });
+  }
+});
+
+export default router;

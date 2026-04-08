@@ -1,0 +1,85 @@
+{
+  "cookies": [
+    {
+      "name": "csrftoken",
+      "value": "H4T6sOdG8NmMEeI9Ru7k8iCf0RGzlKpG",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax",
+      "expires": -1
+    },
+    {
+      "name": "ps_n",
+      "value": "1",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "no_restriction",
+      "expires": -1
+    },
+    {
+      "name": "rur",
+      "value": "\"SNB\\05473315685155\\0541806734865:01fe4faffb209fbf80c8ee0dc8446dcb540e7dea33ff6654b6536ab8890768acbf941714\"",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "lax",
+      "expires": -1
+    },
+    {
+      "name": "ps_l",
+      "value": "1",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "lax",
+      "expires": -1
+    },
+    {
+      "name": "ds_user_id",
+      "value": "73315685155",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "no_restriction",
+      "expires": -1
+    },
+    {
+      "name": "ig_did",
+      "value": "BA2EF4C1-6C50-4A15-90BB-1A46DBB0A6DE",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "no_restriction",
+      "expires": -1
+    },
+    {
+      "name": "mid",
+      "value": "aKsKCQALAAHyh3v-uh3ROjgU9lor",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax",
+      "expires": -1
+    },
+    {
+      "name": "sessionid",
+      "value": "73315685155%3A8VmrjmSehSOVdc%3A12%3AAYiXsRmoc4JWu_yBtefKi2HHEoigoU1nS2ZH8eVkdag",
+      "domain": ".threads.com",
+      "path": "/",
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax",
+      "expires": -1
+    }
+  ],
+  "origins": []
+}
