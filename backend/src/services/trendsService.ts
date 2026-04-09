@@ -3,6 +3,8 @@
  * Fallback：用 MiniMax 根據品牌設定生成話題
  */
 
+import { convertToTraditional } from './antiSpamService';
+
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
 
 export interface TrendTopic {
@@ -52,14 +54,14 @@ export async function generateTopicsWithAI(brandInfo: {
   brand_name: string;
   industry: string;
   target_audience: string;
-}): Promise<TrendTopic[]> {
+}, count = 8): Promise<TrendTopic[]> {
   const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
   if (!MINIMAX_API_KEY) {
     return getDefaultTopics();
   }
 
   const prompt = `你是一位社群媒體趨勢分析師。
-請根據以下品牌資訊，生成 8 個適合在 Threads 上發文的話題。
+請根據以下品牌資訊，生成 ${count} 個適合在 Threads 上發文的話題，話題要多元不重複。
 品牌：${brandInfo.brand_name}（${brandInfo.industry}）
 目標受眾：${brandInfo.target_audience}
 只回傳以下 JSON，不要其他文字：
@@ -86,8 +88,8 @@ export async function generateTopicsWithAI(brandInfo: {
     const parsed = match ? JSON.parse(match[0]) : {};
     const topics = parsed.topics || [];
     return topics.map((t: any, i: number) => ({
-      title: t.title || '',
-      description: t.description || '',
+      title: convertToTraditional(t.title || ''),
+      description: convertToTraditional(t.description || ''),
       source: 'ai_generated' as const,
       trend_score: 80 - i * 5,
     }));

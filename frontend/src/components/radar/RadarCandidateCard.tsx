@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Heart, MessageSquare, UserPlus, Users, Plus, ExternalLink, Clock } from 'lucide-react';
+import { Heart, MessageSquare, UserPlus, Users, Plus, ExternalLink, Clock, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { RadarCandidate, RadarAction } from '../../types';
 
@@ -59,8 +59,14 @@ export function RadarCandidateCard({ candidate, inQueue, commentTemplate, onAssi
 
   const handleActionClick = (action: RadarAction) => {
     onAssignAction(post.id, action);
-    if (action === 'both' && !inQueue) {
-      onAddToQueue({ ...candidate, selectedAction: 'both' }, draftText);
+    if (inQueue) {
+      // 已在佇列中：只更新動作，不重複加入（透過 onAssignAction 已更新 selectedAction）
+    } else {
+      // 尚未加入：自動加入佇列
+      onAddToQueue(
+        { ...candidate, selectedAction: action },
+        action === 'both' || action === 'comment' ? draftText : undefined
+      );
     }
   };
 
@@ -105,7 +111,7 @@ export function RadarCandidateCard({ candidate, inQueue, commentTemplate, onAssi
       {/* Post text */}
       <p className="text-xs text-gray-400 leading-relaxed mb-2">{truncated}</p>
 
-      {/* Comment preview — shown when action involves leaving a comment */}
+      {/* Comment preview — shown when action involves leaving a comment and not yet in queue */}
       {showComment && !inQueue && (
         <div className="mb-2 rounded-lg border border-green-800/50 bg-green-900/10 overflow-hidden">
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-green-800/40">
@@ -141,7 +147,7 @@ export function RadarCandidateCard({ candidate, inQueue, commentTemplate, onAssi
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 items-center">
         {ACTION_BUTTONS.map(btn => (
           <button
             key={btn.value}
@@ -157,18 +163,10 @@ export function RadarCandidateCard({ candidate, inQueue, commentTemplate, onAssi
             {btn.label}
           </button>
         ))}
-        {selectedAction && !inQueue && (
-          <button
-            onClick={() => onAddToQueue(candidate, showComment ? draftText : undefined)}
-            className="px-2.5 py-1.5 bg-green-800/60 hover:bg-green-700/60 border border-green-700/50 text-green-300 rounded text-xs transition-colors"
-            title="加入佇列"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        )}
         {inQueue && (
-          <span className="px-2.5 py-1.5 bg-indigo-900/40 border border-indigo-700/40 text-indigo-400 rounded text-xs">
-            已加入
+          <span className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-900/40 border border-indigo-700/40 text-indigo-400 rounded text-xs flex-shrink-0">
+            <Check className="w-3 h-3" />
+            已加入佇列
           </span>
         )}
       </div>

@@ -440,6 +440,11 @@ export async function publishPost(workspaceId: string, content: string, draftId?
   return response.data;
 }
 
+export async function scheduleAutoDraft(draftId: string, scheduledAt: number, content?: string): Promise<{ success: boolean; scheduled_at: number }> {
+  const response = await api.post(`/pub/drafts/${draftId}/schedule`, { scheduled_at: scheduledAt, content });
+  return response.data;
+}
+
 export async function schedulePost(workspaceId: string, content: string, scheduledAt: number): Promise<{ post: ScheduledPost }> {
   const response = await api.post('/pub/schedule', { workspace_id: workspaceId, content, scheduled_at: scheduledAt });
   return response.data;

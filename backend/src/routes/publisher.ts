@@ -5,6 +5,7 @@ import { publishViaApi } from '../services/threadsApiService';
 import { fetchTrendingTopics, generateTopicsWithAI } from '../services/trendsService';
 import { runPipelineForTopic, composeForTopic, BrandProfile, callMiniMax } from '../services/agentPipeline';
 import { getAccounts, getActiveAccount } from '../services/threadsAuth';
+import { convertToTraditional } from '../services/antiSpamService';
 
 async function publishPost(content: string): Promise<{ success: boolean; error?: string }> {
   return publishViaApi(content);
@@ -244,9 +245,11 @@ router.post('/compose', async (req: Request, res: Response) => {
 // POST /api/pub/publish — 立即發布（Cookie 模式）
 router.post('/publish', async (req: Request, res: Response) => {
   try {
-    const { workspace_id, content, draft_id } = req.body;
-    if (!content) return res.status(400).json({ error: '缺少貼文內容' });
+    const { workspace_id, content: rawContent, draft_id } = req.body;
+    if (!rawContent) return res.status(400).json({ error: '缺少貼文內容' });
+    let content = rawContent;
 
+    content = convertToTraditional(content);
     const result = await publishPost(content);
 
     if (result.success) {
@@ -379,8 +382,9 @@ router.post('/drafts/:id/publish', async (req: Request, res: Response) => {
     if (draftRes.rows.length === 0) return res.status(404).json({ error: '草稿不存在' });
 
     const draft = draftRes.rows[0];
-    const content = overrideContent || draft.content;
+    let content = overrideContent || draft.content;
 
+    content = convertToTraditional(content);
     const publishResult = await publishPost(content);
 
     if (publishResult.success) {
@@ -399,6 +403,34 @@ router.post('/drafts/:id/publish', async (req: Request, res: Response) => {
     }
   } catch (err) {
     res.status(500).json({ error: '發布草稿失敗' });
+  }
+});
+
+// POST /api/pub/drafts/:id/schedule — 排程今日隨機發文
+router.post('/drafts/:id/schedule', async (req: Request, res: Response) => {
+  try {
+    const { scheduled_at, content: overrideContent } = req.body;
+    if (!scheduled_at) return res.status(400).json({ error: '缺少 scheduled_at' });
+
+    const draftRes = await query('SELECT * FROM auto_drafts WHERE id = $1', [req.params.id]);
+    if (draftRes.rows.length === 0) return res.status(404).json({ error: '草稿不存在' });
+
+    const draft = draftRes.rows[0];
+    let content = convertToTraditional(overrideContent || draft.content);
+
+    const schedId = uuidv4();
+    await query(
+      `INSERT INTO auto_scheduled_posts (id, workspace_id, publisher_account_id, content, scheduled_at)
+       VALUES ($1,$2,NULL,$3,$4)`,
+      [schedId, draft.workspace_id, content, scheduled_at]
+    );
+    await query(
+      "UPDATE auto_drafts SET status='approved', content=$1, updated_at=NOW() WHERE id=$2",
+      [content, req.params.id]
+    );
+    res.json({ success: true, scheduled_at, scheduled_post_id: schedId });
+  } catch (err) {
+    res.status(500).json({ error: '排程草稿失敗' });
   }
 });
 
@@ -440,21 +472,23 @@ router.post('/agent/run', async (req: Request, res: Response) => {
 
     // 取得話題：DB 現有話題 + 即時生成的品牌相關話題
     const profileAny = profile as any;
+    const maxDrafts = parseInt(profileAny.posts_per_day) || 3;
+
     const dbTopicsRes = await query(
-      'SELECT * FROM trending_topics WHERE workspace_id = $1 ORDER BY trend_score DESC LIMIT 10',
+      'SELECT * FROM trending_topics WHERE workspace_id = $1 ORDER BY trend_score DESC LIMIT 20',
       [workspace_id]
     );
 
-    // 即時生成品牌相關話題（不管 DB 有無都加）
+    // 即時生成品牌相關話題（生成 maxDrafts * 3 筆以確保有足夠話題通過相關性篩選）
     let brandTopics: Array<{ id: string | undefined; title: string; description: string; source: string; trend_score: number }> = [];
     try {
       const aiTopicList = await generateTopicsWithAI({
         brand_name: profileAny.brand_name || '品牌',
         industry: profileAny.industry || '科技',
         target_audience: profileAny.target_audience || '台灣用戶',
-      });
+      }, maxDrafts * 3);
       brandTopics = aiTopicList.map(t => ({ id: undefined, ...t }));
-      console.log(`[Agent] AI 生成 ${brandTopics.length} 則品牌話題`);
+      console.log(`[Agent] AI 生成 ${brandTopics.length} 則品牌話題，目標產出 ${maxDrafts} 篇`);
     } catch (e) {
       console.warn('[Agent] AI 品牌話題生成失敗:', e);
     }
@@ -466,12 +500,11 @@ router.post('/agent/run', async (req: Request, res: Response) => {
     }
 
     // Immediately return and run pipeline in background
-    res.json({ message: `正在執行 Agent Pipeline（${allTopics.length} 則話題），請稍後查看草稿列表`, success: true });
+    res.json({ message: `Agent 啟動，目標產出 ${maxDrafts} 篇草稿，請稍後查看草稿列表`, success: true });
 
     // Run pipeline for each topic (async, non-blocking)
     (async () => {
       let generated = 0;
-      const maxDrafts = profileAny.posts_per_day || 3;
       const autoPostMode = profileAny.auto_post_mode || 'manual';
       const profileId = profileAny.id || null;
 
@@ -492,7 +525,9 @@ router.post('/agent/run', async (req: Request, res: Response) => {
 
           if (autoPost) {
             // Auto-publish via API (fallback to Cookie)
-            const pubResult = await publishPost(draftOutput.content);
+            let autoContent = draftOutput.content;
+            autoContent = convertToTraditional(autoContent);
+            const pubResult = await publishPost(autoContent);
             const status = pubResult.success ? 'auto_published' : 'pending_review';
             await query(
               `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status, threads_post_id, published_at)

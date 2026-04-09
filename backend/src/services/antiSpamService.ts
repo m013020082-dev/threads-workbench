@@ -42,3 +42,24 @@ export function checkAntiSpam(draft: string, history: string[]): AntiSpamResult 
     passed: warnings.length === 0,
   };
 }
+
+// 常見簡體字對應表（鍵=簡體，值=繁體）
+import * as OpenCC from 'opencc-js';
+
+// 使用 opencc-js 做標準簡繁轉換（s2twp = 簡體 → 台灣正體）
+const _converter = OpenCC.Converter({ from: 'cn', to: 'twp' });
+
+export function detectSimplifiedChinese(text: string): { hasSimplified: boolean; chars: string[] } {
+  const converted = _converter(text);
+  const found: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== converted[i] && !found.includes(text[i])) {
+      found.push(text[i]);
+    }
+  }
+  return { hasSimplified: found.length > 0, chars: found };
+}
+
+export function convertToTraditional(text: string): string {
+  return _converter(text);
+}

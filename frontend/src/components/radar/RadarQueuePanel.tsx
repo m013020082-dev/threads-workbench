@@ -1,14 +1,11 @@
 import { useState } from 'react';
-import { Trash2, Play, UserPlus, Zap, Hand, CheckCheck, AlertTriangle, Check, Loader2, CheckCircle, XCircle, ExternalLink, StepForward, Square } from 'lucide-react';
+import { Trash2, Play, UserPlus, CheckCheck, AlertTriangle, Check, Loader2, CheckCircle, XCircle, ExternalLink, StepForward, Square } from 'lucide-react';
 import clsx from 'clsx';
 import { RadarQueueItem } from '../../types';
 import { ExecutionSession } from '../../api/client';
-import { ExecutionMode } from '../../hooks/useRadar';
 
 interface Props {
   radarQueue: RadarQueueItem[];
-  executionMode: ExecutionMode;
-  onModeChange: (mode: ExecutionMode) => void;
   onRemove: (postId: string) => void;
   onBatchMarkFollow: () => void;
   onExecute: (item: RadarQueueItem) => Promise<void>;
@@ -105,7 +102,7 @@ function ExecutionStatus({ session, onConfirm, onCancel, isConfirming }: {
   );
 }
 
-export function RadarQueuePanel({ radarQueue, executionMode, onModeChange, onRemove, onBatchMarkFollow, onExecute, onConfirm, onCancel, session, isStarting, isConfirming, isRunningAll, onStartAll, onStopAll }: Props) {
+export function RadarQueuePanel({ radarQueue, onRemove, onBatchMarkFollow, onExecute, onConfirm, onCancel, session, isStarting, isConfirming, isRunningAll, onStartAll, onStopAll }: Props) {
   const [executing, setExecuting] = useState<string | null>(null);
 
   const handleExecute = async (item: RadarQueueItem) => {
@@ -126,28 +123,6 @@ export function RadarQueuePanel({ radarQueue, executionMode, onModeChange, onRem
         </h2>
       </div>
 
-      {/* 模式切換 */}
-      <div className="flex gap-1 mb-3 p-1 bg-gray-800 rounded-lg">
-        <button
-          onClick={() => onModeChange('manual')}
-          className={clsx(
-            'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium transition-colors',
-            executionMode === 'manual' ? 'bg-gray-700 text-gray-200' : 'text-gray-500 hover:text-gray-400'
-          )}
-        >
-          <Hand className="w-3 h-3" /> 手動
-        </button>
-        <button
-          onClick={() => onModeChange('semi-auto')}
-          className={clsx(
-            'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium transition-colors',
-            executionMode === 'semi-auto' ? 'bg-indigo-700 text-white' : 'text-gray-500 hover:text-gray-400'
-          )}
-        >
-          <Zap className="w-3 h-3" /> 半自動
-        </button>
-      </div>
-
       {/* 批次操作 */}
       {radarQueue.length > 0 && (
         <div className="mb-3 space-y-1.5">
@@ -159,8 +134,8 @@ export function RadarQueuePanel({ radarQueue, executionMode, onModeChange, onRem
             批次升級為「兩者」
           </button>
 
-          {/* 一鍵全部啟動 — 只在半自動模式且無執行中 session 時顯示 */}
-          {executionMode === 'semi-auto' && !session && (
+          {/* 一鍵全部啟動 — 無執行中 session 時顯示 */}
+          {!session && (
             isRunningAll ? (
               <button
                 onClick={onStopAll}
@@ -250,14 +225,14 @@ export function RadarQueuePanel({ radarQueue, executionMode, onModeChange, onRem
                     快速開啟
                   </button>
 
-                  {executionMode === 'semi-auto' && !session && (
+                  {!session && (
                     <button
                       onClick={() => handleExecute(item)}
                       disabled={isExecuting || isStarting}
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-green-800/60 hover:bg-green-700/60 border border-green-700/50 text-green-300 rounded text-xs font-medium transition-colors disabled:opacity-50"
                     >
                       <Play className="w-3 h-3" />
-                      {isExecuting ? '開啟中...' : '半自動'}
+                      {isExecuting ? '開啟中...' : '執行'}
                     </button>
                   )}
                 </div>

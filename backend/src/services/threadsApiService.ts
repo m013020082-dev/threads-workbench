@@ -206,7 +206,7 @@ export async function replyViaApi(postUrl: string, replyText: string): Promise<{
   const shortcode = extractShortcodeFromUrl(postUrl);
   if (!shortcode) return { success: false, error: `無法從 URL 解析貼文 ID: ${postUrl}` };
 
-  // 優先使用 DB 中存的真實 media ID，沒有則用 Playwright 即時取得
+  // 優先順序：1) DB 快取  2) Playwright 攔截（支援無 Cookie 模式）
   let replyToId: string | null = null;
   const dbRes = await query('SELECT threads_media_id FROM posts WHERE post_url = $1 LIMIT 1', [postUrl]);
   if (dbRes.rows[0]?.threads_media_id) {
@@ -215,17 +215,17 @@ export async function replyViaApi(postUrl: string, replyText: string): Promise<{
   } else {
     replyToId = await resolveMediaIdViaPlaywright(postUrl);
     if (!replyToId) {
-      return { success: false, error: '無法取得此貼文的 Threads Media ID，請確認帳號 Cookie 是否有效' };
+      return { success: false, error: '無法取得此貼文的 Threads Media ID（Playwright 攔截失敗）' };
     }
   }
   console.log(`[ThreadsAPI] 回覆貼文 ${shortcode} → media_id: ${replyToId}`);
 
   try {
-    // Step 1: create reply container
+    // Step 1: create reply container (use JSON to avoid percent-encoding issues)
     const createRes = await fetch(`${THREADS_API}/${acc.threads_user_id}/threads`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         media_type: 'TEXT',
         text: replyText,
         reply_to_id: replyToId,
@@ -277,11 +277,11 @@ export async function publishViaApi(text: string): Promise<{
   if (!acc) return { success: false, error: '尚未連接 Threads API，請先完成 OAuth 授權' };
 
   try {
-    // Step 1: create container
+    // Step 1: create container (use JSON to avoid percent-encoding issues with Chinese/emoji)
     const createRes = await fetch(`${THREADS_API}/${acc.threads_user_id}/threads`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         media_type: 'TEXT',
         text,
         access_token: acc.access_token,

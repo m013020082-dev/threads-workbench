@@ -7,8 +7,12 @@
  * Step 5: 內容審稿
  */
 
+import { convertToTraditional } from './antiSpamService';
+
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
+
+const TC_ENFORCE = '【強制規定】所有回應必須使用繁體中文（台灣正體），嚴格禁止出現任何簡體字。';
 
 export async function callMiniMax(systemPrompt: string, userPrompt: string): Promise<string> {
   const res = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
@@ -17,7 +21,7 @@ export async function callMiniMax(systemPrompt: string, userPrompt: string): Pro
     body: JSON.stringify({
       model: 'MiniMax-M2.5',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: `${TC_ENFORCE}\n\n${systemPrompt}` },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 2048,
@@ -81,7 +85,7 @@ async function evaluateRelevance(brand: BrandProfile, topic: TrendTopic): Promis
     : `${brand.brand_name}（${brand.industry}）`;
 
   const result = await callMiniMax(
-    '你是一位品牌內容策略師，負責評估熱門話題與品牌的相關性。',
+    '你是一位品牌內容策略師，負責評估熱門話題與品牌的相關性。請嚴格使用繁體中文（台灣用字）回應，禁止出現任何簡體字。',
     `品牌：${displayName}
 語氣風格：${brand.tone_description}
 核心關鍵字：${brand.keywords}
@@ -94,7 +98,9 @@ async function evaluateRelevance(brand: BrandProfile, topic: TrendTopic): Promis
 請評估相關性，只回傳 JSON：{"score":0-100的整數,"reason":"評估理由（50字以內）","isRelevant":true/false}`
   );
 
-  return parseJSON(result, { score: 0, reason: '無法評估', isRelevant: false });
+  const parsed = parseJSON(result, { score: 0, reason: '無法評估', isRelevant: false });
+  parsed.reason = convertToTraditional(parsed.reason);
+  return parsed;
 }
 
 /** Step 3: 切入角度規劃 */
@@ -104,7 +110,7 @@ async function planAngles(brand: BrandProfile, topic: TrendTopic): Promise<{ ang
     : `${brand.brand_name}（${brand.industry}）`;
 
   const result = await callMiniMax(
-    '你是一位品牌內容策略師，擅長將熱門話題轉化為品牌專業觀點。請以 JSON 格式回傳 3 個切入角度，並選出最佳的一個。',
+    '你是一位品牌內容策略師，擅長將熱門話題轉化為品牌專業觀點。請以 JSON 格式回傳 3 個切入角度，並選出最佳的一個。請嚴格使用繁體中文（台灣用字）回應，禁止出現任何簡體字。',
     `品牌：${displayName}
 語氣風格：${brand.tone_description}
 目標受眾：${brand.target_audience}
@@ -114,51 +120,49 @@ async function planAngles(brand: BrandProfile, topic: TrendTopic): Promise<{ ang
 請提供 3 個不同的品牌切入角度，選出最適合的一個，只回傳 JSON：{"angles":["角度1","角度2","角度3"],"chosen":"最佳角度","reasoning":"選擇理由（30字以內）"}`
   );
 
-  return parseJSON(result, { angles: ['直接分享觀點'], chosen: '直接分享觀點', reasoning: '最直接' });
+  const parsed = parseJSON(result, { angles: ['直接分享觀點'], chosen: '直接分享觀點', reasoning: '最直接' });
+  parsed.angles = parsed.angles.map((a: string) => convertToTraditional(a));
+  parsed.chosen = convertToTraditional(parsed.chosen);
+  parsed.reasoning = convertToTraditional(parsed.reasoning);
+  return parsed;
 }
 
 /** Step 4: 內容生成 */
 async function generateContent(brand: BrandProfile, topic: TrendTopic, chosenAngle: string): Promise<string> {
-  const architectures = [
-    { name: '超短鉤子型', wordCount: '30-80 字', logic: '一句 punch → 留白 → 讓人想回你', suitable: '情緒共鳴、神轉折、幽默自嘲、金句' },
-    { name: '中短敘事型', wordCount: '70-180 字', logic: '開頭鉤子 → 事件/痛點 → 一句結論', suitable: '小故事、經驗分享、觀點輸出' },
-    { name: '長文價值型', wordCount: '200-350 字', logic: '破題 → 3 個重點 → 收尾 CTA', suitable: '乾貨整理、專業觀點、教學拆解' },
-  ];
-  const arch = architectures[Math.floor(Math.random() * architectures.length)];
-
   const displayName = brand.profile_mode === 'persona'
     ? `${brand.persona_name}（${brand.occupation}）`
     : `${brand.brand_name}（${brand.industry}）`;
 
-  const systemPrompt = `你是一位 Threads 貼文撰寫專家，使用繁體中文撰寫台灣口語風格的貼文。
+  const systemPrompt = `你是一個真實的 Threads 用戶，用台灣日常口語寫貼文。請嚴格使用繁體中文（台灣用字），禁止出現任何簡體字。
 
-必須遵守的產文規則：
-- 不要加 hashtag（#標籤）
-- 表情符號要克制，整篇最多 2-3 個，不要每句都加
-- 用擬人、真實的口吻撰寫，像真人在說話，不要像廣告文案，不要官腔
-- 每一句話獨立一行，句子之間空一行
-- 不要使用逗點、句點，直接換行
-- 問句全篇最多 0-2 個
-- 最後一句要留互動鉤子（例如：你有類似的經驗嗎？你覺得呢？有問題歡迎留言）`;
+【寫作規則】
+- 開場用口語帶入：「有人跟我一樣嗎」「最近才發現」「說真的」這類自然開頭
+- 描述日常感受，用生活小情節，例如「晚上腦袋停不下來」「滑手機滑到焦慮」
+- 用「結果」「然後」「但」「欸」這類口語轉折，讓句子像真人在講話
+- 可以有小反差或輕鬆結尾，例如「看起來沒怎樣但一直有在進步」
+- 字數 30 到 90 字，不要超過
+- 一行只寫一句話，句子結束就換行，絕對不要把兩句話寫在同一行
+- 每行之間空一行
+- 標點符號只允許四種：逗號「，」、句號「。」、問號「？」、冒號「:」，其他所有標點（頓號、括號、引號、破折號、驚嘆號、省略號、書名號等）一律用空白取代，不要出現
+- 冒號用在說話引導或轉折強調，例如「你說: 太酷了吧」「我在想: 這樣對嗎」「結果發現: 根本沒差」
+- 偶爾用提問收尾，讓讀者有參與感
+- 不要加 hashtag
+- 表情符號最多 2 個，不要每句都放
+- 不要寫得像廣告、官方文案或條列式乾貨
+- 只輸出貼文本身，不要加任何說明文字、引號、前言`;
 
   const result = await callMiniMax(systemPrompt,
-    `品牌：${displayName}
-語氣：${brand.tone_description}
-參考範例貼文風格：${brand.example_post || '無'}
-熱門話題：${topic.title}
+    `品牌身份：${displayName}
+語氣風格：${brand.tone_description}
+${brand.example_post ? `參考貼文風格（模仿這個人的語氣）：${brand.example_post}` : ''}
+話題：${topic.title}
 切入角度：${chosenAngle}
-額外產文備註（請嚴格遵守）：${brand.posting_notes || '無'}
+${brand.posting_notes ? `額外要求（必須遵守）：${brand.posting_notes}` : ''}
 
-【本次架構：${arch.name}】
-字數：${arch.wordCount}
-邏輯：${arch.logic}
-適合：${arch.suitable}
-
-請撰寫一則 Threads 貼文，只回傳 JSON：{"content":"完整貼文內容（一句話一行，不含 hashtag）","hook":"開頭吸引句（前20字）"}`
+請直接寫出貼文內容，不要有任何其他文字。`
   );
 
-  const parsed = parseJSON<{ content?: string }>(result, {});
-  return parsed.content || result.replace(/^["']|["']$/g, '').trim();
+  return convertToTraditional(result.trim());
 }
 
 /** Step 5: 內容審稿 */
@@ -173,7 +177,7 @@ async function auditContent(brand: BrandProfile, content: string): Promise<{
     : `${brand.brand_name}（${brand.industry}）`;
 
   const result = await callMiniMax(
-    '你是一位內容審稿員，負責審查社群媒體貼文的品質與風險。',
+    '你是一位內容審稿員，負責審查社群媒體貼文的品質與風險。請嚴格使用繁體中文（台灣用字）回應，禁止出現任何簡體字。',
     `品牌：${displayName}
 語氣風格：${brand.tone_description}
 避免話題：${brand.avoid_topics}
@@ -190,7 +194,10 @@ ${content}
 只回傳 JSON：{"passed":true/false,"riskLevel":"low"/"medium"/"high","issues":["問題1"],"notes":"審稿摘要（50字以內）"}`
   );
 
-  return parseJSON(result, { passed: true, riskLevel: 'low' as const, issues: [], notes: '通過審稿' });
+  const auditParsed = parseJSON(result, { passed: true, riskLevel: 'low' as const, issues: [] as string[], notes: '通過審稿' });
+  auditParsed.notes = convertToTraditional(auditParsed.notes);
+  auditParsed.issues = auditParsed.issues.map((issue: string) => convertToTraditional(issue));
+  return auditParsed;
 }
 
 /** 直接產文（跳過相關性評估），用於使用者手動輸入話題的 compose 場景 */
@@ -213,12 +220,12 @@ export async function composeForTopic(
 
   return {
     trend_topic_id: topic.id,
-    source_trend: topic.title,
+    source_trend: convertToTraditional(topic.title),
     relevance_score: 100,
-    angle: angles.chosen,
-    content,
+    angle: convertToTraditional(angles.chosen),
+    content: convertToTraditional(content),
     risk_level: audit.riskLevel,
-    audit_notes: audit.notes,
+    audit_notes: convertToTraditional(audit.notes),
     passed: audit.passed,
   };
 }
@@ -250,12 +257,12 @@ export async function runPipelineForTopic(
 
   return {
     trend_topic_id: topic.id,
-    source_trend: topic.title,
+    source_trend: convertToTraditional(topic.title),
     relevance_score: relevance.score,
-    angle: angles.chosen,
-    content,
+    angle: convertToTraditional(angles.chosen),
+    content: convertToTraditional(content),
     risk_level: audit.riskLevel,
-    audit_notes: audit.notes,
+    audit_notes: convertToTraditional(audit.notes),
     passed: audit.passed,
   };
 }

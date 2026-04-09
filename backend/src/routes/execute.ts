@@ -8,6 +8,7 @@ import {
 } from '../services/executeService';
 import { replyViaApi } from '../services/threadsApiService';
 import { replyWithCookies } from '../services/cookiePublisher';
+import { detectSimplifiedChinese, convertToTraditional } from '../services/antiSpamService';
 
 const router = Router();
 
@@ -83,11 +84,24 @@ router.post('/reply-direct', async (req: Request, res: Response) => {
     if (draftRes.rows.length === 0) return res.status(404).json({ error: 'Draft not found' });
 
     const { post_url, workspace_id } = postRes.rows[0];
-    const { draft_text } = draftRes.rows[0];
+    let { draft_text } = draftRes.rows[0];
 
-    // 官方 Graph API 無法查詢其他用戶的貼文 ID，回覆只能用 Cookie/Playwright
-    const result = await replyWithCookies(post_url, draft_text);
-    console.log(`[Execute] 回覆模式: Cookie/Playwright → ${result.success ? '成功' : result.error}`);
+    // 自動將簡體字轉換為繁體
+    const { hasSimplified, chars } = detectSimplifiedChinese(draft_text);
+    if (hasSimplified) {
+      console.warn(`[Execute] 草稿含簡體字: ${chars.join('')}，自動轉換為繁體`);
+      draft_text = convertToTraditional(draft_text);
+    }
+
+    // 優先走官方 API（shortcode 換算 media ID），失敗才退回 Cookie/Playwright
+    let result = await replyViaApi(post_url, draft_text);
+    if (result.success) {
+      console.log(`[Execute] 回覆模式: Threads API → 成功`);
+    } else {
+      console.log(`[Execute] Threads API 失敗 (${result.error})，退回 Cookie/Playwright`);
+      result = await replyWithCookies(post_url, draft_text);
+      console.log(`[Execute] 回覆模式: Cookie/Playwright → ${result.success ? '成功' : result.error}`);
+    }
 
     if (result.success) {
       await query("UPDATE posts SET status = 'POSTED' WHERE id = $1", [post_id]);

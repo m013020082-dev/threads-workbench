@@ -21,8 +21,6 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
     removeFromQueue,
     batchMarkFollow,
     radarQueue,
-    executionMode,
-    setExecutionMode,
     session,
     isStarting,
     isConfirming,
@@ -89,8 +87,6 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
       <aside className="w-72 flex-shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col overflow-y-auto p-4">
         <RadarQueuePanel
           radarQueue={radarQueue}
-          executionMode={executionMode}
-          onModeChange={setExecutionMode}
           onRemove={removeFromQueue}
           onBatchMarkFollow={batchMarkFollow}
           onExecute={startExecution}

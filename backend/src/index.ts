@@ -14,6 +14,7 @@ import radarRouter from './routes/radar';
 import publisherRouter from './routes/publisher';
 import { query } from './db/client';
 import { publishViaApi } from './services/threadsApiService';
+import { convertToTraditional } from './services/antiSpamService';
 
 /** 每分鐘執行到期的排程貼文（官方 API 模式） */
 let autoPublishInterval: NodeJS.Timeout | null = null;
@@ -27,7 +28,8 @@ function startAutoPublishLoop() {
         [now]
       );
       for (const post of pending.rows) {
-        const result = await publishViaApi(post.content);
+        const content = convertToTraditional(post.content);
+        const result = await publishViaApi(content);
         if (result.success) {
           await query(
             "UPDATE auto_scheduled_posts SET status='published', published_at=$1, updated_at=NOW() WHERE id=$2",

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, SkipForward, Check, RefreshCw, ChevronDown, ChevronUp, CheckCheck, UserPlus, Play, Zap, Hand, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { User, SkipForward, Check, RefreshCw, ChevronDown, ChevronUp, CheckCheck, UserPlus, Play, Loader2, CheckCircle2, XCircle, Send } from 'lucide-react';
 import clsx from 'clsx';
 import { Post, Draft } from '../types';
 import { DraftCard } from './DraftCard';
@@ -69,6 +69,35 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
     try { await onExecute(post.id, approvedDraft.id); } finally { setExecuting(false); }
   };
 
+  const handleApproveAndSend = async (draftId: string) => {
+    await onApprove(draftId);
+    setReplyStatus('posting');
+    setReplyError('');
+    setShowDrafts(false);
+    try {
+      const res = await directReply(post.id, draftId);
+      setReplyStatus(res.success ? 'success' : 'error');
+      if (!res.success) setReplyError(res.error || '回覆失敗');
+    } catch (err: any) {
+      setReplyStatus('error');
+      setReplyError(err.message || '回覆失敗');
+    }
+  };
+
+  const handleSendApproved = async () => {
+    if (!approvedDraft?.id) return;
+    setReplyStatus('posting');
+    setReplyError('');
+    try {
+      const res = await directReply(post.id, approvedDraft.id);
+      setReplyStatus(res.success ? 'success' : 'error');
+      if (!res.success) setReplyError(res.error || '回覆失敗');
+    } catch (err: any) {
+      setReplyStatus('error');
+      setReplyError(err.message || '回覆失敗');
+    }
+  };
+
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
       <div className="p-3">
@@ -77,36 +106,36 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
             <User className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
             <span className="text-xs font-medium text-gray-300 truncate">{post.author_handle}</span>
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {approvedDraft && (
-              <span className="flex items-center gap-0.5 text-xs text-green-400">
-                <Check className="w-3 h-3" /> 已核准
-              </span>
-            )}
-            <span className="text-xs text-gray-600">{formatTimeAgo(post.posted_at)}</span>
-          </div>
+          <span className="text-xs text-gray-600 flex-shrink-0">{formatTimeAgo(post.posted_at)}</span>
         </div>
-
         <p className="text-xs text-gray-400 leading-relaxed">{truncatedText}</p>
-
       </div>
 
-      {approvedDraft && (
-        <div className="px-3 pb-2">
+      {/* 已核准草稿 + 發文按鈕 */}
+      {approvedDraft && replyStatus === 'idle' && (
+        <div className="px-3 pb-2 space-y-2">
           <div className="bg-gray-900 rounded px-2.5 py-2 border border-green-900/40">
             <p className="text-xs text-gray-300 leading-relaxed line-clamp-3">{approvedDraft.draft_text}</p>
           </div>
+          <button
+            onClick={handleSendApproved}
+            className="w-full flex items-center justify-center gap-1.5 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-semibold transition-colors"
+          >
+            <Send className="w-3.5 h-3.5" />
+            發文
+          </button>
         </div>
       )}
 
-      {allDrafts.length > 0 && (
+      {/* 草稿列表（未核准時展開選擇） */}
+      {!approvedDraft && allDrafts.length > 0 && (
         <div className="px-3 pb-2">
           <button
             onClick={() => setShowDrafts(!showDrafts)}
             className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
           >
             {showDrafts ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {allDrafts.length} 份草稿 {showDrafts ? '（隱藏）' : '（顯示）'}
+            {allDrafts.length} 份草稿，選一份核准並發文
           </button>
           {showDrafts && (
             <div className="mt-2 space-y-2">
@@ -116,20 +145,7 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
                   draft={draft}
                   onApprove={async () => {
                     if (!draft.id) return;
-                    await onApprove(draft.id);
-                    if (executionMode === 'semi-auto') {
-                      setReplyStatus('posting');
-                      setReplyError('');
-                      setShowDrafts(false);
-                      try {
-                        const res = await directReply(post.id, draft.id);
-                        setReplyStatus(res.success ? 'success' : 'error');
-                        if (!res.success) setReplyError(res.error || '回覆失敗');
-                      } catch (err: any) {
-                        setReplyStatus('error');
-                        setReplyError(err.message || '回覆失敗');
-                      }
-                    }
+                    await handleApproveAndSend(draft.id);
                   }}
                   compact={false}
                 />
@@ -139,7 +155,7 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
         </div>
       )}
 
-      {/* 回覆狀態列 */}
+      {/* 回覆狀態 */}
       {replyStatus === 'posting' && (
         <div className="px-3 pb-2 flex items-center gap-2 text-xs text-purple-300">
           <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
@@ -158,17 +174,14 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
             <XCircle className="w-3.5 h-3.5 flex-shrink-0" />
             {replyError || '回覆失敗'}
           </div>
-          {/* 失敗時才顯示重新執行（開視窗備援） */}
-          {approvedDraft && (
-            <button
-              onClick={handleExecute}
-              disabled={executing}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-yellow-900/40 hover:bg-yellow-800/40 border border-yellow-800/50 text-yellow-300 rounded text-xs font-medium transition-colors disabled:opacity-50"
-            >
-              <Play className="w-3.5 h-3.5" />
-              {executing ? '開啟中...' : '改用瀏覽器視窗重試'}
-            </button>
-          )}
+          <button
+            onClick={handleExecute}
+            disabled={executing}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-yellow-900/40 hover:bg-yellow-800/40 border border-yellow-800/50 text-yellow-300 rounded text-xs font-medium transition-colors disabled:opacity-50"
+          >
+            <Play className="w-3.5 h-3.5" />
+            {executing ? '開啟中...' : '改用瀏覽器視窗重試'}
+          </button>
         </div>
       )}
 
@@ -177,7 +190,6 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
           onClick={handleSkip}
           disabled={skipping || isSkipping}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-gray-700 hover:bg-red-900/50 text-gray-400 hover:text-red-400 rounded text-xs transition-colors disabled:opacity-50"
-          title="略過此貼文"
         >
           <SkipForward className="w-3.5 h-3.5" />
           略過
@@ -253,34 +265,6 @@ export function ReviewQueue({
           title="重新整理佇列"
         >
           <RefreshCw className={clsx('w-3.5 h-3.5', isLoading && 'animate-spin')} />
-        </button>
-      </div>
-
-      {/* 模式切換 */}
-      <div className="flex gap-1 mb-3 p-1 bg-gray-800 rounded-lg">
-        <button
-          onClick={() => onModeChange('manual')}
-          className={clsx(
-            'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium transition-colors',
-            executionMode === 'manual'
-              ? 'bg-gray-700 text-gray-200'
-              : 'text-gray-500 hover:text-gray-400'
-          )}
-        >
-          <Hand className="w-3 h-3" />
-          手動模式
-        </button>
-        <button
-          onClick={() => onModeChange('semi-auto')}
-          className={clsx(
-            'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded text-xs font-medium transition-colors',
-            executionMode === 'semi-auto'
-              ? 'bg-indigo-700 text-white'
-              : 'text-gray-500 hover:text-gray-400'
-          )}
-        >
-          <Zap className="w-3 h-3" />
-          半自動
         </button>
       </div>
 

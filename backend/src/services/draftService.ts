@@ -1,12 +1,14 @@
 import { DraftRequest, DraftResult } from '../types';
-import { checkAntiSpam } from './antiSpamService';
+import { checkAntiSpam, convertToTraditional } from './antiSpamService';
 import { query } from '../db/client';
 
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
 const MINIMAX_MODEL = 'MiniMax-M2.5';
 
-async function callMiniMax(prompt: string): Promise<string> {
+const SYSTEM_PROMPT_TC = '你必須嚴格使用繁體中文（台灣用字）回應，絕對禁止出現任何簡體字。';
+
+async function callClaude(prompt: string): Promise<string> {
   const res = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -15,7 +17,10 @@ async function callMiniMax(prompt: string): Promise<string> {
     },
     body: JSON.stringify({
       model: MINIMAX_MODEL,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_TC },
+        { role: 'user', content: prompt },
+      ],
       max_tokens: 2048,
       temperature: 0.8,
     }),
@@ -28,10 +33,7 @@ async function callMiniMax(prompt: string): Promise<string> {
 
   const data = await res.json() as any;
   let content: string = data.choices?.[0]?.message?.content || '';
-
-  // 過濾推理模型的 <think>...</think> 標籤
   content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-
   return content;
 }
 
@@ -87,7 +89,7 @@ export async function generateDrafts(request: DraftRequest): Promise<DraftResult
     ? `\n額外指示：${request.reply_note.trim()}`
     : '';
 
-  const prompt = `你是一個幫助撰寫 Threads 留言回覆的助手。用繁體中文生成台灣口語風格的留言。
+  const prompt = `你是一個幫助撰寫 Threads 留言回覆的助手。嚴格使用繁體中文（台灣用字），絕對禁止出現任何簡體字。若有用到「国、时、们、说、来、这、从、发、东、经、开、实、为、问」等簡體字，必須改為對應繁體字「國、時、們、說、來、這、從、發、東、經、開、實、為、問」。
 
 ${logicGuide}
 
@@ -101,27 +103,25 @@ ${emojiGuide}${replyNoteSection}
 請生成 3 個不同角度的留言草稿，每個都要符合上面的發文邏輯。
 不可帶有廣告或垃圾郵件性質。
 
-只回傳以下格式的有效 JSON，不要有任何其他文字：
-[
-  {"text": "第一個留言草稿"},
-  {"text": "第二個留言草稿"},
-  {"text": "第三個留言草稿"}
-]`;
+請用以下格式輸出，不要有任何其他文字：
+---1---
+第一個留言草稿內容
+---2---
+第二個留言草稿內容
+---3---
+第三個留言草稿內容`;
 
-  const raw = await callMiniMax(prompt);
+  const raw = await callClaude(prompt);
 
-  let parsed: { text: string }[] = [];
-  try {
-    const match = raw.match(/\[[\s\S]*\]/);
-    parsed = match ? JSON.parse(match[0]) : [];
-  } catch {
-    parsed = [{ text: raw.trim() }];
-  }
+  // 用分隔符解析，避免 JSON escape 導致奇怪符號
+  const parts = raw.split(/---\d+---/).map(s => s.trim()).filter(Boolean);
+  const drafts = parts.length >= 3 ? parts.slice(0, 3) : [raw.trim(), raw.trim(), raw.trim()];
 
-  return parsed.map(item => {
-    const spam = checkAntiSpam(item.text, history);
+  return drafts.map(text => {
+    const converted = convertToTraditional(text);
+    const spam = checkAntiSpam(converted, history);
     return {
-      text: item.text,
+      text: converted,
       style: request.style,
       similarity_score: spam.similarity_score,
       risk_notes: spam.warnings.join('; '),

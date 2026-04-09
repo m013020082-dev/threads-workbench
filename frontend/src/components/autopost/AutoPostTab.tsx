@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, PenSquare, Clock, History,
   TrendingUp, Bot, Settings, ChevronRight,
@@ -12,6 +12,7 @@ import { HistoryPage } from './HistoryPage';
 import { TrendingPage } from './TrendingPage';
 import { AIDraftsPage } from './AIDraftsPage';
 import { BrandProfilePage } from './BrandProfilePage';
+import { getAutoDrafts, AutoDraft } from '../../api/client';
 
 type Page = 'dashboard' | 'accounts' | 'compose' | 'scheduled' | 'history' | 'trending' | 'ai-drafts' | 'brand-profile';
 
@@ -31,6 +32,24 @@ const navItems: { id: Page; label: string; icon: React.ComponentType<{ className
 export function AutoPostTab({ workspaceId }: Props) {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [composeTopic, setComposeTopic] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    const fetchPending = () => {
+      getAutoDrafts(workspaceId)
+        .then(r => {
+          const count = r.drafts.filter((d: AutoDraft) => d.status === 'pending_review').length;
+          setPendingCount(count);
+        })
+        .catch(() => {});
+    };
+
+    fetchPending();
+    const interval = setInterval(fetchPending, 30000);
+    return () => clearInterval(interval);
+  }, [workspaceId]);
 
   const handleNavigate = (page: string) => {
     setCurrentPage(page as Page);
@@ -66,6 +85,11 @@ export function AutoPostTab({ workspaceId }: Props) {
           >
             <item.icon className={clsx('w-4 h-4 flex-shrink-0', currentPage === item.id ? 'text-indigo-400' : 'text-gray-500 group-hover:text-gray-400')} />
             <span className="flex-1 truncate">{item.label}</span>
+            {item.id === 'ai-drafts' && pendingCount > 0 && (
+              <span className="ml-auto px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full font-bold min-w-[18px] text-center">
+                {pendingCount}
+              </span>
+            )}
             {currentPage === item.id && <ChevronRight className="w-3 h-3 text-indigo-400 flex-shrink-0" />}
           </button>
         ))}
