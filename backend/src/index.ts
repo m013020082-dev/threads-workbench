@@ -13,6 +13,7 @@ import authRouter from './routes/auth';
 import executeRouter from './routes/execute';
 import radarRouter from './routes/radar';
 import publisherRouter from './routes/publisher';
+import googleAuthRouter from './routes/googleAuth';
 import { query } from './db/client';
 import { publishViaApi } from './services/threadsApiService';
 import { convertToTraditional } from './services/antiSpamService';
@@ -90,6 +91,7 @@ app.use('/api/queue', queueRouter);         // /api/queue, /api/queue/add, /api/
 app.use('/api/workspace', workspaceRouter); // /api/workspace/create, /list, /switch, /:id/keywords
 app.use('/api/scheduler', schedulerRouter); // /api/scheduler/create, /list, /toggle/:id
 app.use('/api/auth', authRouter);           // /api/auth/status, /login, /logout
+app.use('/api/auth/google', googleAuthRouter); // /api/auth/google/login, /callback, /me
 app.use('/api/execute', executeRouter);     // /api/execute/start, /confirm, /cancel, /status
 app.use('/api/radar', radarRouter);         // /api/radar/execute/start, /confirm, /cancel, /status
 app.use('/api/pub', publisherRouter);       // /api/pub/accounts, /brand-profile, /trending, /compose, /publish, /drafts, /agent

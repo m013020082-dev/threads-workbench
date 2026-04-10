@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Activity, Zap, Database, Radio, Pencil } from 'lucide-react';
+import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
 import clsx from 'clsx';
 import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { AccountManager } from './components/AccountManager';
@@ -18,6 +19,7 @@ import { Post, Draft } from './types';
 import { checkHealth, getAuthStatus, AccountInfo } from './api/client';
 
 export default function App() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'workbench' | 'radar' | 'autopost'>('workbench');
   const [showScheduler, setShowScheduler] = useState(false);
   const [postingLogic, setPostingLogic] = useState('擬人幽默');
@@ -257,6 +259,23 @@ export default function App() {
             排程器
           </button>
         </div>
+
+        {/* User Info */}
+        {user && (
+          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            {user.picture && (
+              <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full" />
+            )}
+            <span className="text-xs text-gray-300 hidden sm:block">{user.name}</span>
+            <button
+              onClick={logout}
+              title="登出"
+              className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Main Layout */}

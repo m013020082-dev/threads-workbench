@@ -216,6 +216,23 @@ CREATE TABLE IF NOT EXISTS auto_post_history (
 );
     `,
   },
+  {
+    name: '005_users',
+    sql: `
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  google_id TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  name TEXT DEFAULT '',
+  picture TEXT DEFAULT '',
+  created_at TIMESTAMP DEFAULT NOW(),
+  last_login TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_workspaces_user_id ON workspaces(user_id);
+    `,
+  },
 ];
 
 export async function runMigrations(): Promise<void> {
