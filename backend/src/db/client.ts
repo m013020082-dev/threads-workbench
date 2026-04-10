@@ -23,9 +23,10 @@ export async function checkConnection(): Promise<boolean> {
   }
 }
 
-export async function query(text: string, params?: unknown[]): Promise<{ rows: any[] }> {
+export async function query(text: string, params?: unknown[]): Promise<{ rows: any[]; rowCount: number | null }> {
   if (useMemory) {
-    return memQuery(text, params || []);
+    const r = memQuery(text, params || []);
+    return { ...r, rowCount: r.rows.length };
   }
   const res = await pool.query(text, params);
   return res;

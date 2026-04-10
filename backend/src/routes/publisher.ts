@@ -1,14 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/client';
 import { v4 as uuidv4 } from 'uuid';
-import { publishViaApi } from '../services/threadsApiService';
 import { fetchTrendingTopics, generateTopicsWithAI } from '../services/trendsService';
 import { runPipelineForTopic, composeForTopic, BrandProfile, callMiniMax } from '../services/agentPipeline';
 import { getAccounts, getActiveAccount } from '../services/threadsAuth';
 import { convertToTraditional } from '../services/antiSpamService';
+import { publishWithCookies } from '../services/cookiePublisher';
 
 async function publishPost(content: string): Promise<{ success: boolean; error?: string }> {
-  return publishViaApi(content);
+  return publishWithCookies(content);
 }
 
 const router = Router();
@@ -279,6 +279,93 @@ router.post('/publish', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/pub/schedule/batch — 批次建立一個月排程（AI 自動生成內容）
+router.post('/schedule/batch', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id, start_date, end_date, posts_per_day, hour_start = 9, hour_end = 21 } = req.body;
+    if (!workspace_id || !start_date || !end_date || !posts_per_day) {
+      return res.status(400).json({ error: '缺少必要參數：workspace_id, start_date, end_date, posts_per_day' });
+    }
+    if (posts_per_day < 1 || posts_per_day > 50) {
+      return res.status(400).json({ error: 'posts_per_day 需介於 1–50' });
+    }
+    if (hour_start >= hour_end) {
+      return res.status(400).json({ error: 'hour_start 需小於 hour_end' });
+    }
+
+    // 計算日期清單
+    const start = new Date(start_date);
+    const end = new Date(end_date);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 0);
+    const diffDays = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+    if (diffDays > 31) return res.status(400).json({ error: '最多排程 31 天' });
+    const totalSlots = diffDays * posts_per_day;
+    if (totalSlots > 1500) return res.status(400).json({ error: `總篇數 ${totalSlots} 超過上限 1500` });
+
+    // 取得品牌設定
+    const profileRes = await query('SELECT * FROM brand_profiles WHERE workspace_id = $1 LIMIT 1', [workspace_id]);
+    const profile: BrandProfile = profileRes.rows[0] || {
+      profile_mode: 'brand', brand_name: '品牌', industry: '科技',
+      tone_description: '親切自然', keywords: '', avoid_topics: '',
+      target_audience: '台灣用戶', writing_directions: '', example_post: '', posting_notes: '',
+    };
+
+    // 預先回應，背景生成並排程
+    res.json({ message: `開始批次排程：${diffDays} 天 × ${posts_per_day} 篇 = ${totalSlots} 篇，正在後台生成中...`, total: totalSlots, success: true });
+
+    // 背景執行
+    (async () => {
+      const scheduled: string[] = [];
+      for (let d = 0; d < diffDays; d++) {
+        const dayStart = new Date(start);
+        dayStart.setDate(start.getDate() + d);
+
+        // 在時間窗內隨機分配 posts_per_day 個時間點
+        const minuteRange = (hour_end - hour_start) * 60;
+        const slots: number[] = [];
+        while (slots.length < posts_per_day) {
+          const randMin = Math.floor(Math.random() * minuteRange);
+          // 確保各時間點至少間隔 15 分鐘
+          if (slots.every(s => Math.abs(s - randMin) >= 15)) slots.push(randMin);
+        }
+        slots.sort((a, b) => a - b);
+
+        for (const offsetMin of slots) {
+          const scheduledAt = new Date(dayStart);
+          scheduledAt.setHours(hour_start, offsetMin, 0, 0);
+
+          try {
+            // AI 生成內容
+            const aiTopics = await generateTopicsWithAI({
+              brand_name: (profile as any).brand_name || '品牌',
+              industry: (profile as any).industry || '科技',
+              target_audience: (profile as any).target_audience || '台灣用戶',
+            }, 1);
+
+            const topic = aiTopics[0] || { title: '今日分享', description: '', source: 'batch', trend_score: 50 };
+            const draft = await composeForTopic(profile, topic);
+            const content = draft ? convertToTraditional(draft.content) : `${topic.title}`;
+
+            await query(
+              `INSERT INTO auto_scheduled_posts (id, workspace_id, publisher_account_id, content, scheduled_at)
+               VALUES ($1,$2,NULL,$3,$4)`,
+              [uuidv4(), workspace_id, content, scheduledAt.getTime()]
+            );
+            scheduled.push(scheduledAt.toISOString());
+          } catch (err) {
+            console.error(`[BatchSchedule] 生成失敗 ${scheduledAt.toISOString()}:`, err);
+          }
+        }
+      }
+      console.log(`[BatchSchedule] 完成，共建立 ${scheduled.length}/${totalSlots} 篇排程`);
+    })();
+  } catch (err) {
+    console.error('Batch schedule error:', err);
+    res.status(500).json({ error: '批次排程失敗' });
+  }
+});
+
 // POST /api/pub/schedule
 router.post('/schedule', async (req: Request, res: Response) => {
   try {
@@ -486,7 +573,7 @@ router.post('/agent/run', async (req: Request, res: Response) => {
         brand_name: profileAny.brand_name || '品牌',
         industry: profileAny.industry || '科技',
         target_audience: profileAny.target_audience || '台灣用戶',
-      }, maxDrafts * 3);
+      }, Math.min(maxDrafts, 10)); // 最多 10 個，count=10 經測試穩定可靠
       brandTopics = aiTopicList.map(t => ({ id: undefined, ...t }));
       console.log(`[Agent] AI 生成 ${brandTopics.length} 則品牌話題，目標產出 ${maxDrafts} 篇`);
     } catch (e) {
@@ -500,66 +587,81 @@ router.post('/agent/run', async (req: Request, res: Response) => {
     }
 
     // Immediately return and run pipeline in background
-    res.json({ message: `Agent 啟動，目標產出 ${maxDrafts} 篇草稿，請稍後查看草稿列表`, success: true });
+    res.json({ message: `Agent 啟動，目標產出 ${maxDrafts} 篇草稿（並行處理中），請稍後查看草稿列表`, success: true });
 
-    // Run pipeline for each topic (async, non-blocking)
+    // Concurrency pool：同時跑 CONCURRENCY 條 pipeline，湊滿 maxDrafts 篇才停
     (async () => {
-      let generated = 0;
       const autoPostMode = profileAny.auto_post_mode || 'manual';
       const profileId = profileAny.id || null;
+      const CONCURRENCY = Math.min(5, maxDrafts); // 最多 5 條並行，避免 API rate limit
 
-      for (const topic of allTopics) {
-        if (generated >= maxDrafts) break;
-        try {
-          const draftOutput = await runPipelineForTopic(profile, {
-            id: topic.id,
-            title: topic.title,
-            description: topic.description,
-            source: topic.source,
-            trend_score: topic.trend_score,
-          });
+      const successfulDrafts: any[] = [];
+      let topicIndex = 0;
 
-          if (!draftOutput) continue;
+      console.log(`[Agent] 並行 ${CONCURRENCY} 條 pipeline，目標 ${maxDrafts} 篇（共 ${allTopics.length} 個話題）`);
 
-          const autoPost = autoPostMode === 'auto';
-
-          if (autoPost) {
-            // Auto-publish via API (fallback to Cookie)
-            let autoContent = draftOutput.content;
-            autoContent = convertToTraditional(autoContent);
-            const pubResult = await publishPost(autoContent);
-            const status = pubResult.success ? 'auto_published' : 'pending_review';
-            await query(
-              `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status, threads_post_id, published_at)
-               VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'',$12)`,
-              [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
-               draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
-               draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes, status,
-               pubResult.success ? Date.now() : 0]
-            );
-            if (pubResult.success) {
-              await query(
-                `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, threads_post_id, status, published_at)
-                 VALUES ($1,$2,NULL,$3,'','success',$4)`,
-                [uuidv4(), workspace_id, draftOutput.content, Date.now()]
-              );
+      // Worker：不斷從 allTopics 拉話題，直到達到目標數量
+      async function pipelineWorker() {
+        while (topicIndex < allTopics.length) {
+          if (successfulDrafts.length >= maxDrafts) break;
+          const i = topicIndex++;           // JS 單執行緒，++ 是原子操作
+          const topic = allTopics[i];
+          try {
+            const draftOutput = await runPipelineForTopic(profile, {
+              id: topic.id,
+              title: topic.title,
+              description: topic.description,
+              source: topic.source,
+              trend_score: topic.trend_score,
+            });
+            if (draftOutput && successfulDrafts.length < maxDrafts) {
+              successfulDrafts.push(draftOutput);
+              console.log(`[Agent] ✓ 草稿 ${successfulDrafts.length}/${maxDrafts}：${topic.title}`);
             }
-          } else {
-            // Save as pending_review
-            await query(
-              `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status)
-               VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,'pending_review')`,
-              [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
-               draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
-               draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes]
-            );
+          } catch (err) {
+            console.error(`[Agent] ✗ 話題 "${topic.title}" 失敗:`, err);
           }
-          generated++;
-        } catch (err) {
-          console.error(`[Agent] 話題 "${topic.title}" 處理失敗:`, err);
         }
       }
-      console.log(`[Agent] 完成，生成 ${generated} 則草稿`);
+
+      // 啟動 CONCURRENCY 條 worker 並等全部跑完
+      await Promise.all(Array.from({ length: CONCURRENCY }, () => pipelineWorker()));
+
+      // 儲存結果
+      let generated = 0;
+      for (const draftOutput of successfulDrafts.slice(0, maxDrafts)) {
+        const autoPost = autoPostMode === 'auto';
+        if (autoPost) {
+          let autoContent = convertToTraditional(draftOutput.content);
+          const pubResult = await publishPost(autoContent);
+          const status = pubResult.success ? 'auto_published' : 'pending_review';
+          await query(
+            `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status, threads_post_id, published_at)
+             VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,$11,'',$12)`,
+            [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
+             draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
+             draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes, status,
+             pubResult.success ? Date.now() : 0]
+          );
+          if (pubResult.success) {
+            await query(
+              `INSERT INTO auto_post_history (id, workspace_id, publisher_account_id, content, threads_post_id, status, published_at)
+               VALUES ($1,$2,NULL,$3,'','success',$4)`,
+              [uuidv4(), workspace_id, draftOutput.content, Date.now()]
+            );
+          }
+        } else {
+          await query(
+            `INSERT INTO auto_drafts (id, workspace_id, publisher_account_id, brand_profile_id, trend_topic_id, source_trend, relevance_score, angle, content, risk_level, audit_notes, status)
+             VALUES ($1,$2,NULL,$3,$4,$5,$6,$7,$8,$9,$10,'pending_review')`,
+            [uuidv4(), workspace_id, profileId, draftOutput.trend_topic_id || null,
+             draftOutput.source_trend, draftOutput.relevance_score, draftOutput.angle,
+             draftOutput.content, draftOutput.risk_level, draftOutput.audit_notes]
+          );
+        }
+        generated++;
+      }
+      console.log(`[Agent] 完成，產出 ${generated}/${maxDrafts} 篇草稿`);
     })();
   } catch (err) {
     console.error('Agent run error:', err);

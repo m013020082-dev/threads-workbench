@@ -127,10 +127,17 @@ export async function startExecution(
       await commentBox.click({ timeout: 5000 }).catch(() => {});
       await activePage.waitForTimeout(500);
 
-      // 清除既有內容再填入
+      // 清除既有內容再填入（多行用 Shift+Enter，避免 Enter 直接送出）
       await activePage.keyboard.press('Control+a');
       await activePage.waitForTimeout(200);
-      await activePage.keyboard.type(draftText, { delay: 30 });
+      const lines = draftText.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]) await activePage.keyboard.type(lines[i], { delay: 30 });
+        if (i < lines.length - 1) {
+          await activePage.keyboard.press('Shift+Enter');
+          await activePage.waitForTimeout(100);
+        }
+      }
       console.log(`[Execute] 留言草稿已填入（${draftText.length} 字）`);
     } else {
       console.warn('[Execute] 未找到留言輸入框，請手動點擊輸入框後貼上草稿');
@@ -267,7 +274,11 @@ export async function startRadarExecution(
           await activePage.waitForTimeout(300);
           await activePage.keyboard.press('Control+a');
           await activePage.waitForTimeout(150);
-          await activePage.keyboard.type(draftText, { delay: 25 });
+          const lines1 = draftText.split('\n');
+          for (let i = 0; i < lines1.length; i++) {
+            if (lines1[i]) await activePage.keyboard.type(lines1[i], { delay: 25 });
+            if (i < lines1.length - 1) { await activePage.keyboard.press('Shift+Enter'); await activePage.waitForTimeout(80); }
+          }
           console.log(`[Radar] 留言已填入`);
           break;
         }
@@ -291,7 +302,11 @@ export async function startRadarExecution(
           await activePage.waitForTimeout(300);
           await activePage.keyboard.press('Control+a');
           await activePage.waitForTimeout(150);
-          await activePage.keyboard.type(draftText, { delay: 25 });
+          const lines2 = draftText.split('\n');
+          for (let i = 0; i < lines2.length; i++) {
+            if (lines2[i]) await activePage.keyboard.type(lines2[i], { delay: 25 });
+            if (i < lines2.length - 1) { await activePage.keyboard.press('Shift+Enter'); await activePage.waitForTimeout(80); }
+          }
           console.log(`[Radar] 留言已填入（both）`);
           break;
         }

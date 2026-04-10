@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { User, SkipForward, Check, RefreshCw, ChevronDown, ChevronUp, CheckCheck, UserPlus, Play, Loader2, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { User, SkipForward, Check, RefreshCw, ChevronDown, ChevronUp, CheckCheck, UserPlus, Play, Loader2, CheckCircle2, XCircle, Send, Trash2, Zap, Heart, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import { Post, Draft } from '../types';
 import { DraftCard } from './DraftCard';
 import { ExecutionMode } from '../hooks/useExecution';
-import { directReply } from '../api/client';
+import { directReply, FollowedRecord } from '../api/client';
+import { SentTrackingSection } from './SentTrackingSection';
 
 interface ReviewQueueProps {
   queue: Post[];
@@ -15,10 +16,19 @@ interface ReviewQueueProps {
   onApproveAll: () => Promise<unknown>;
   onBatchFollow: (postIds: string[]) => Promise<unknown>;
   onExecute: (postId: string, draftId: string) => Promise<void>;
+  onClearQueue: () => Promise<unknown>;
   isSkipping: boolean;
   isApprovingAll: boolean;
+  isClearing: boolean;
+  sentPosts: Post[];
+  sentCount: number;
+  refetchSent: () => void;
+  followedAccounts: FollowedRecord[];
+  followedCount: number;
+  refetchFollowed: () => void;
   executionMode: ExecutionMode;
   onModeChange: (mode: ExecutionMode) => void;
+  workspaceId: string;
   refetch: () => void;
 }
 
@@ -39,24 +49,32 @@ interface QueueItemProps {
   onApprove: (draftId: string) => Promise<unknown>;
   onSelect: (post: Post, draft: Draft | undefined) => void;
   onExecute: (postId: string, draftId: string) => Promise<void>;
+  onSendSuccess: () => void;
+  onFollowSuccess: () => void;
   isSkipping: boolean;
   executionMode: ExecutionMode;
 }
 
 type ReplyStatus = 'idle' | 'posting' | 'success' | 'error';
 
-function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, executionMode }: QueueItemProps) {
+function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, onSendSuccess, onFollowSuccess, isSkipping, executionMode }: QueueItemProps) {
   const [showDrafts, setShowDrafts] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [replyStatus, setReplyStatus] = useState<ReplyStatus>('idle');
   const [replyError, setReplyError] = useState('');
+  const [editedText, setEditedText] = useState<string | null>(null);
+  const [followStatus, setFollowStatus] = useState<'idle' | 'following' | 'success' | 'error'>('idle');
+  const [sentAt, setSentAt] = useState<Date | null>(null);
 
   const approvedDraft = post.drafts?.find((d) => d.approved);
   const allDrafts = post.drafts || [];
   const truncatedText = post.post_text.length > 100
     ? post.post_text.substring(0, 100) + '...'
     : post.post_text;
+
+  // 當草稿核准後同步 editedText
+  const draftText = editedText ?? approvedDraft?.draft_text ?? '';
 
   const handleSkip = async () => {
     setSkipping(true);
@@ -69,15 +87,17 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
     try { await onExecute(post.id, approvedDraft.id); } finally { setExecuting(false); }
   };
 
-  const handleApproveAndSend = async (draftId: string) => {
+  const handleApproveAndSend = async (draftId: string, text: string) => {
     await onApprove(draftId);
+    setEditedText(text);
     setReplyStatus('posting');
     setReplyError('');
     setShowDrafts(false);
     try {
-      const res = await directReply(post.id, draftId);
+      const res = await directReply(post.id, draftId, text);
       setReplyStatus(res.success ? 'success' : 'error');
-      if (!res.success) setReplyError(res.error || '回覆失敗');
+      if (res.success) { setSentAt(new Date()); onSendSuccess(); }
+      else setReplyError(res.error || '回覆失敗');
     } catch (err: any) {
       setReplyStatus('error');
       setReplyError(err.message || '回覆失敗');
@@ -89,12 +109,24 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
     setReplyStatus('posting');
     setReplyError('');
     try {
-      const res = await directReply(post.id, approvedDraft.id);
+      const res = await directReply(post.id, approvedDraft.id, draftText);
       setReplyStatus(res.success ? 'success' : 'error');
-      if (!res.success) setReplyError(res.error || '回覆失敗');
+      if (res.success) { setSentAt(new Date()); onSendSuccess(); }
+      else setReplyError(res.error || '回覆失敗');
     } catch (err: any) {
       setReplyStatus('error');
       setReplyError(err.message || '回覆失敗');
+    }
+  };
+
+  const handleFollow = async () => {
+    setFollowStatus('following');
+    try {
+      const res = await radarExecuteDirect(post.id, 'follow', post.author_handle);
+      setFollowStatus(res.success ? 'success' : 'error');
+      if (res.success) onFollowSuccess();
+    } catch {
+      setFollowStatus('error');
     }
   };
 
@@ -111,15 +143,19 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
         <p className="text-xs text-gray-400 leading-relaxed">{truncatedText}</p>
       </div>
 
-      {/* 已核准草稿 + 發文按鈕 */}
+      {/* 已核准草稿 + 可編輯 + 發文按鈕 */}
       {approvedDraft && replyStatus === 'idle' && (
         <div className="px-3 pb-2 space-y-2">
-          <div className="bg-gray-900 rounded px-2.5 py-2 border border-green-900/40">
-            <p className="text-xs text-gray-300 leading-relaxed line-clamp-3">{approvedDraft.draft_text}</p>
-          </div>
+          <textarea
+            rows={3}
+            value={draftText}
+            onChange={e => setEditedText(e.target.value)}
+            className="w-full px-2.5 py-2 bg-gray-900 border border-green-800/50 rounded text-xs text-gray-200 leading-relaxed resize-none focus:outline-none focus:border-green-500"
+          />
           <button
             onClick={handleSendApproved}
-            className="w-full flex items-center justify-center gap-1.5 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-semibold transition-colors"
+            disabled={!draftText.trim()}
+            className="w-full flex items-center justify-center gap-1.5 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-semibold transition-colors disabled:opacity-50"
           >
             <Send className="w-3.5 h-3.5" />
             發文
@@ -145,7 +181,7 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
                   draft={draft}
                   onApprove={async () => {
                     if (!draft.id) return;
-                    await handleApproveAndSend(draft.id);
+                    await handleApproveAndSend(draft.id, draft.draft_text);
                   }}
                   compact={false}
                 />
@@ -163,9 +199,37 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
         </div>
       )}
       {replyStatus === 'success' && (
-        <div className="px-3 pb-2 flex items-center gap-2 text-xs text-green-400">
-          <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-          已成功回覆
+        <div className="px-3 pb-2 space-y-1.5">
+          <div className="flex items-center gap-2 text-xs text-green-400">
+            <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>已成功回覆</span>
+            {sentAt && <span className="text-gray-600 ml-auto">{sentAt.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}</span>}
+          </div>
+          {followStatus === 'idle' && (
+            <button
+              onClick={handleFollow}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-blue-900/40 hover:bg-blue-800/50 border border-blue-800/50 text-blue-300 rounded text-xs font-medium transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              追蹤 {post.author_handle}
+            </button>
+          )}
+          {followStatus === 'following' && (
+            <div className="flex items-center gap-1.5 text-xs text-blue-300 py-1">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />追蹤中...
+            </div>
+          )}
+          {followStatus === 'success' && (
+            <div className="flex items-center gap-1.5 text-xs text-blue-400 py-1">
+              <Heart className="w-3.5 h-3.5" />已追蹤 {post.author_handle}
+            </div>
+          )}
+          {followStatus === 'error' && (
+            <div className="flex items-center justify-between gap-1.5 text-xs text-red-400 py-1">
+              <span>追蹤失敗</span>
+              <button onClick={handleFollow} className="underline">重試</button>
+            </div>
+          )}
         </div>
       )}
       {replyStatus === 'error' && (
@@ -199,6 +263,7 @@ function QueueItem({ post, onSkip, onApprove, onSelect, onExecute, isSkipping, e
   );
 }
 
+
 export function ReviewQueue({
   queue,
   isLoading,
@@ -208,14 +273,33 @@ export function ReviewQueue({
   onApproveAll,
   onBatchFollow,
   onExecute,
+  onClearQueue,
   isSkipping,
   isApprovingAll,
+  isClearing,
+  sentPosts,
+  sentCount,
+  refetchSent,
+  followedAccounts,
+  followedCount,
+  refetchFollowed,
   executionMode,
   onModeChange,
   refetch,
+  workspaceId,
 }: ReviewQueueProps) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isSendingAll, setIsSendingAll] = useState(false);
+  const [sendAllProgress, setSendAllProgress] = useState<{ done: number; total: number } | null>(null);
+  const handleSendSuccess = () => {
+    refetch();
+    refetchSent();
+  };
+
+  const handleFollowSuccess = () => {
+    refetchFollowed();
+  };
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -228,6 +312,32 @@ export function ReviewQueue({
 
   const handleApproveAll = async () => {
     await onApproveAll();
+  };
+
+  const handleSendAll = async () => {
+    const approved = queue.filter(p => p.drafts?.some(d => d.approved));
+    if (approved.length === 0) return;
+    setIsSendingAll(true);
+    setSendAllProgress({ done: 0, total: approved.length });
+    for (let i = 0; i < approved.length; i++) {
+      const post = approved[i];
+      const draft = post.drafts?.find(d => d.approved);
+      if (!draft?.id) continue;
+      try {
+        await directReply(post.id, draft.id, draft.draft_text);
+      } catch {}
+      setSendAllProgress({ done: i + 1, total: approved.length });
+    }
+    setIsSendingAll(false);
+    setSendAllProgress(null);
+    refetch();
+    refetchSent();
+    setShowSent(true);
+  };
+
+  const handleClearQueue = async () => {
+    if (!confirm(`確定要刪除佇列中全部 ${queue.length} 篇？`)) return;
+    await onClearQueue();
   };
 
   const handleBatchFollow = async () => {
@@ -248,7 +358,7 @@ export function ReviewQueue({
   const pendingApproval = queue.filter(p => !p.drafts?.some(d => d.approved)).length;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -281,14 +391,38 @@ export function ReviewQueue({
               {isApprovingAll ? '核准中...' : `一鍵全部核准（${pendingApproval} 篇）`}
             </button>
           )}
-          <button
-            onClick={handleBatchFollow}
-            disabled={isFollowing}
-            className="w-full flex items-center justify-center gap-1.5 py-2 bg-blue-900/40 hover:bg-blue-800/40 border border-blue-800/50 text-blue-300 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            {isFollowing ? '標記中...' : `批次標記建議追蹤${selected.size > 0 ? `（${selected.size} 篇）` : ''}`}
-          </button>
+          {approvedCount > 0 && (
+            <button
+              onClick={handleSendAll}
+              disabled={isSendingAll}
+              className="w-full flex items-center justify-center gap-1.5 py-2 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+            >
+              {isSendingAll ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />發文中 {sendAllProgress?.done}/{sendAllProgress?.total}...</>
+              ) : (
+                <><Zap className="w-3.5 h-3.5" />一鍵全部發文（{approvedCount} 篇）</>
+              )}
+            </button>
+          )}
+          <div className="flex gap-1.5">
+            <button
+              onClick={handleBatchFollow}
+              disabled={isFollowing}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-blue-900/40 hover:bg-blue-800/40 border border-blue-800/50 text-blue-300 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              {isFollowing ? '標記中...' : `批次追蹤`}
+            </button>
+            <button
+              onClick={handleClearQueue}
+              disabled={isClearing}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-900/40 hover:bg-red-800/40 border border-red-800/50 text-red-400 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50"
+              title="刪除全部"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {isClearing ? '刪除中...' : '刪除全部'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -311,7 +445,7 @@ export function ReviewQueue({
           ))}
         </div>
       ) : queue.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
+        <div className="flex flex-col items-center justify-center py-8 text-center">
           <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center mb-3">
             <Check className="w-5 h-5 text-gray-600" />
           </div>
@@ -319,7 +453,7 @@ export function ReviewQueue({
           <p className="text-gray-600 text-xs mt-1">生成並核准草稿以加入佇列</p>
         </div>
       ) : (
-        <div className="space-y-3 overflow-y-auto flex-1">
+        <div className="space-y-3">
           {queue.map((post) => (
             <QueueItem
               key={post.id}
@@ -328,12 +462,23 @@ export function ReviewQueue({
               onApprove={onApprove}
               onSelect={onSelectPost}
               onExecute={onExecute}
+              onSendSuccess={handleSendSuccess}
+              onFollowSuccess={handleFollowSuccess}
               isSkipping={isSkipping}
               executionMode={executionMode}
             />
           ))}
         </div>
       )}
+
+      {/* 發文追蹤區塊 — 永遠顯示 */}
+      <SentTrackingSection
+        sentPosts={sentPosts}
+        followedAccounts={followedAccounts}
+        workspaceId={workspaceId}
+        onFollowSuccess={handleFollowSuccess}
+        onRefresh={refetchSent}
+      />
     </div>
   );
 }

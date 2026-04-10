@@ -73,7 +73,7 @@ export async function generateTopicsWithAI(brandInfo: {
     body: JSON.stringify({
       model: 'MiniMax-M2.5',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 800,
+      max_tokens: 3000,
       temperature: 0.7,
     }),
   });
@@ -85,8 +85,10 @@ export async function generateTopicsWithAI(brandInfo: {
 
   try {
     const match = content.match(/\{[\s\S]*\}/);
-    const parsed = match ? JSON.parse(match[0]) : {};
+    if (!match) return getDefaultTopics(); // JSON 被截斷或不存在時用 fallback
+    const parsed = JSON.parse(match[0]);
     const topics = parsed.topics || [];
+    if (topics.length === 0) return getDefaultTopics();
     return topics.map((t: any, i: number) => ({
       title: convertToTraditional(t.title || ''),
       description: convertToTraditional(t.description || ''),
@@ -101,10 +103,17 @@ export async function generateTopicsWithAI(brandInfo: {
 function getDefaultTopics(): TrendTopic[] {
   return [
     { title: 'AI 工具應用', description: 'ChatGPT、Claude 等 AI 工具在日常工作的應用', source: 'ai_generated', trend_score: 90 },
-    { title: '台灣科技新創', description: '台灣科技創業生態與機會', source: 'ai_generated', trend_score: 85 },
-    { title: '職場生產力', description: '提升工作效率的方法與工具', source: 'ai_generated', trend_score: 80 },
-    { title: '數位行銷趨勢', description: '社群媒體與內容行銷的最新趨勢', source: 'ai_generated', trend_score: 75 },
-    { title: '永續消費', description: '環境友善的生活方式與消費選擇', source: 'ai_generated', trend_score: 70 },
+    { title: '台灣科技新創', description: '台灣科技創業生態與機會', source: 'ai_generated', trend_score: 88 },
+    { title: '職場生產力', description: '提升工作效率的方法與工具', source: 'ai_generated', trend_score: 85 },
+    { title: '數位行銷趨勢', description: '社群媒體與內容行銷的最新趨勢', source: 'ai_generated', trend_score: 83 },
+    { title: '永續消費', description: '環境友善的生活方式與消費選擇', source: 'ai_generated', trend_score: 80 },
+    { title: '個人品牌經營', description: '在社群媒體上建立個人品牌的策略', source: 'ai_generated', trend_score: 78 },
+    { title: '工作與生活平衡', description: '台灣職場文化與身心健康的平衡之道', source: 'ai_generated', trend_score: 75 },
+    { title: '投資理財入門', description: '適合台灣小資族的理財觀念與工具', source: 'ai_generated', trend_score: 73 },
+    { title: '台灣在地旅遊', description: '探索台灣各地特色景點與美食文化', source: 'ai_generated', trend_score: 70 },
+    { title: '健康飲食趨勢', description: '台灣飲食文化與健康生活方式的結合', source: 'ai_generated', trend_score: 68 },
+    { title: '創業心得分享', description: '台灣創業者的實戰經驗與挑戰', source: 'ai_generated', trend_score: 65 },
+    { title: '社群媒體使用習慣', description: '台灣用戶在各平台的使用趨勢', source: 'ai_generated', trend_score: 63 },
   ];
 }
 

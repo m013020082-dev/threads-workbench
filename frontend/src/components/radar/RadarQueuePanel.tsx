@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trash2, Play, UserPlus, CheckCheck, AlertTriangle, Check, Loader2, CheckCircle, XCircle, ExternalLink, StepForward, Square } from 'lucide-react';
+import { Trash2, Play, UserPlus, CheckCheck, AlertTriangle, Check, Loader2, CheckCircle, XCircle, ExternalLink, StepForward, Square, Send } from 'lucide-react';
 import clsx from 'clsx';
 import { RadarQueueItem } from '../../types';
 import { ExecutionSession } from '../../api/client';
@@ -7,8 +7,11 @@ import { ExecutionSession } from '../../api/client';
 interface Props {
   radarQueue: RadarQueueItem[];
   onRemove: (postId: string) => void;
+  onUpdateDraftText: (postId: string, text: string) => void;
   onBatchMarkFollow: () => void;
   onExecute: (item: RadarQueueItem) => Promise<void>;
+  onReplyDirect: (item: RadarQueueItem) => Promise<{ success: boolean; error?: string }>;
+  replyingIds: Set<string>;
   onConfirm: () => Promise<void>;
   onCancel: () => Promise<void>;
   session: ExecutionSession | null;
@@ -102,8 +105,9 @@ function ExecutionStatus({ session, onConfirm, onCancel, isConfirming }: {
   );
 }
 
-export function RadarQueuePanel({ radarQueue, onRemove, onBatchMarkFollow, onExecute, onConfirm, onCancel, session, isStarting, isConfirming, isRunningAll, onStartAll, onStopAll }: Props) {
+export function RadarQueuePanel({ radarQueue, onRemove, onUpdateDraftText, onBatchMarkFollow, onExecute, onReplyDirect, replyingIds, onConfirm, onCancel, session, isStarting, isConfirming, isRunningAll, onStartAll, onStopAll }: Props) {
   const [executing, setExecuting] = useState<string | null>(null);
+  const [replyErrors, setReplyErrors] = useState<Record<string, string>>({});
 
   const handleExecute = async (item: RadarQueueItem) => {
     setExecuting(item.candidate.post.id);
@@ -201,16 +205,25 @@ export function RadarQueuePanel({ radarQueue, onRemove, onBatchMarkFollow, onExe
 
                 <p className="text-xs text-gray-600 truncate mb-1.5">{item.candidate.post.post_text.substring(0, 60)}...</p>
 
-                {/* 回文預覽 */}
-                {item.draftText && (
-                  <div className="mb-1.5 px-2 py-1.5 bg-green-900/20 border border-green-800/40 rounded text-xs text-green-300 whitespace-pre-wrap leading-relaxed max-h-16 overflow-hidden">
-                    {item.draftText}
-                  </div>
+                {/* 回文編輯框 */}
+                {(item.action === 'comment' || item.action === 'both') && (
+                  <textarea
+                    rows={2}
+                    value={item.draftText || ''}
+                    onChange={e => onUpdateDraftText(item.candidate.post.id, e.target.value)}
+                    placeholder="留言內容（可直接編輯）"
+                    className="w-full mb-1.5 px-2 py-1.5 bg-green-900/10 border border-green-800/40 rounded text-xs text-green-300 resize-none focus:outline-none focus:border-green-600 leading-relaxed placeholder-gray-600"
+                  />
+                )}
+
+                {/* 錯誤提示 */}
+                {replyErrors[item.candidate.post.id] && (
+                  <p className="text-xs text-red-400 mb-1.5">{replyErrors[item.candidate.post.id]}</p>
                 )}
 
                 {/* 按鈕區 */}
                 <div className="flex gap-1.5">
-                  {/* 快速互追加發文：同時開個人頁 + 貼文 */}
+                  {/* 快速開啟：同時開個人頁 + 貼文 */}
                   <button
                     onClick={() => {
                       const handle = item.candidate.post.author_handle;
@@ -218,21 +231,29 @@ export function RadarQueuePanel({ radarQueue, onRemove, onBatchMarkFollow, onExe
                       window.open(profileUrl, '_blank', 'noopener,noreferrer');
                       window.open(item.candidate.post.post_url, '_blank', 'noopener,noreferrer');
                     }}
-                    title="快速互追加發文（同時開啟個人頁 + 貼文）"
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-indigo-800/50 hover:bg-indigo-700/60 border border-indigo-700/50 text-indigo-300 rounded text-xs font-medium transition-colors"
+                    title="同時開啟個人頁 + 貼文"
+                    className="flex items-center justify-center gap-1 px-2 py-1.5 bg-indigo-800/50 hover:bg-indigo-700/60 border border-indigo-700/50 text-indigo-300 rounded text-xs font-medium transition-colors"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    快速開啟
                   </button>
 
+                  {/* 直接執行（headless，不開視窗） */}
                   {!session && (
                     <button
-                      onClick={() => handleExecute(item)}
-                      disabled={isExecuting || isStarting}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-green-800/60 hover:bg-green-700/60 border border-green-700/50 text-green-300 rounded text-xs font-medium transition-colors disabled:opacity-50"
+                      onClick={async () => {
+                        const result = await onReplyDirect(item);
+                        if (!result.success && result.error) {
+                          setReplyErrors(prev => ({ ...prev, [item.candidate.post.id]: result.error! }));
+                          setTimeout(() => setReplyErrors(prev => { const s = { ...prev }; delete s[item.candidate.post.id]; return s; }), 5000);
+                        }
+                      }}
+                      disabled={replyingIds.has(item.candidate.post.id) || ((item.action === 'comment' || item.action === 'both') && !item.draftText)}
+                      title="背景直接執行，不開瀏覽器視窗"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-teal-800/60 hover:bg-teal-700/60 border border-teal-700/50 text-teal-300 rounded text-xs font-medium transition-colors disabled:opacity-50"
                     >
-                      <Play className="w-3 h-3" />
-                      {isExecuting ? '開啟中...' : '執行'}
+                      {replyingIds.has(item.candidate.post.id)
+                        ? <><Loader2 className="w-3 h-3 animate-spin" />執行中</>
+                        : <><Send className="w-3 h-3" />直接執行</>}
                     </button>
                   )}
                 </div>

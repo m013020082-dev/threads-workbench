@@ -24,7 +24,7 @@ export async function callMiniMax(systemPrompt: string, userPrompt: string): Pro
         { role: 'system', content: `${TC_ENFORCE}\n\n${systemPrompt}` },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 2048,
+      max_tokens: 4096,
       temperature: 0.8,
     }),
   });
@@ -141,8 +141,9 @@ async function generateContent(brand: BrandProfile, topic: TrendTopic, chosenAng
 - 用「結果」「然後」「但」「欸」這類口語轉折，讓句子像真人在講話
 - 可以有小反差或輕鬆結尾，例如「看起來沒怎樣但一直有在進步」
 - 字數 30 到 90 字，不要超過
-- 一行只寫一句話，句子結束就換行，絕對不要把兩句話寫在同一行
-- 每行之間空一行
+- 【格式強制規定】一句話 = 一行。句子結束立刻換行，下一句從新的一行開始。每行之間空一行。
+- 錯誤示範（禁止）：「說真的我之前以為很簡單，結果根本不是這樣。」（兩句在同一行）
+- 正確示範（必須）：「說真的我之前以為很簡單。\n\n結果根本不是這樣。」
 - 標點符號只允許四種：逗號「，」、句號「。」、問號「？」、冒號「:」，其他所有標點（頓號、括號、引號、破折號、驚嘆號、省略號、書名號等）一律用空白取代，不要出現
 - 冒號用在說話引導或轉折強調，例如「你說: 太酷了吧」「我在想: 這樣對嗎」「結果發現: 根本沒差」
 - 偶爾用提問收尾，讓讀者有參與感
@@ -162,7 +163,13 @@ ${brand.posting_notes ? `額外要求（必須遵守）：${brand.posting_notes}
 請直接寫出貼文內容，不要有任何其他文字。`
   );
 
-  return convertToTraditional(result.trim());
+  const cleaned = result
+    .replace(/<br\s*\/?>/gi, '\n')   // <br> 轉換為換行
+    .replace(/<[^>]+>/g, '')          // 移除所有其他 HTML tag
+    .replace(/\*\*/g, '')             // 移除 markdown bold
+    .replace(/#{1,6}\s/g, '')         // 移除 markdown heading
+    .trim();
+  return convertToTraditional(cleaned);
 }
 
 /** Step 5: 內容審稿 */
@@ -235,11 +242,15 @@ export async function runPipelineForTopic(
   brand: BrandProfile,
   topic: TrendTopic
 ): Promise<DraftOutput | null> {
-  // Step 2: 相關性評估
-  const relevance = await evaluateRelevance(brand, topic);
-  if (!relevance.isRelevant || relevance.score < 50) {
-    console.log(`[Agent] 話題 "${topic.title}" 相關性不足 (${relevance.score})，跳過`);
-    return null;
+  // Step 2: 相關性評估（AI 生成話題已針對品牌，跳過篩選；Google Trends 才需要）
+  let relevanceScore = 100;
+  if (topic.source === 'google_trends') {
+    const relevance = await evaluateRelevance(brand, topic);
+    if (!relevance.isRelevant || relevance.score < 30) {
+      console.log(`[Agent] 話題 "${topic.title}" 相關性不足 (${relevance.score})，跳過`);
+      return null;
+    }
+    relevanceScore = relevance.score;
   }
 
   // Step 3: 切入角度
@@ -258,7 +269,7 @@ export async function runPipelineForTopic(
   return {
     trend_topic_id: topic.id,
     source_trend: convertToTraditional(topic.title),
-    relevance_score: relevance.score,
+    relevance_score: relevanceScore,
     angle: convertToTraditional(angles.chosen),
     content: convertToTraditional(content),
     risk_level: audit.riskLevel,

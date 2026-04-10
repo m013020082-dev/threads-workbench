@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Post, Draft } from '../types';
-import { getQueue, skipPost, approveDraft, approveAll, batchFollow } from '../api/client';
+import { getQueue, skipPost, approveDraft, approveAll, batchFollow, clearQueue, getSentPosts, getFollowedAccounts, FollowedRecord } from '../api/client';
 
 export function useQueue(workspaceId: string | null) {
   const queryClient = useQueryClient();
@@ -54,6 +54,38 @@ export function useQueue(workspaceId: string | null) {
     },
   });
 
+  const clearQueueMutation = useMutation({
+    mutationFn: async () => {
+      if (!workspaceId) throw new Error('No workspace selected');
+      return clearQueue(workspaceId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue', workspaceId] });
+    },
+  });
+
+  const followedQuery = useQuery({
+    queryKey: ['followed', workspaceId],
+    queryFn: async () => {
+      if (!workspaceId) return { followed: [] as FollowedRecord[], count: 0 };
+      return getFollowedAccounts(workspaceId);
+    },
+    enabled: !!workspaceId,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
+
+  const sentQuery = useQuery({
+    queryKey: ['sent', workspaceId],
+    queryFn: async () => {
+      if (!workspaceId) return { sent: [], count: 0 };
+      return getSentPosts(workspaceId);
+    },
+    enabled: !!workspaceId,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
+
   const getApprovedDraft = (post: Post): Draft | undefined => {
     return post.drafts?.find((d) => d.approved);
   };
@@ -87,5 +119,13 @@ export function useQueue(workspaceId: string | null) {
     isApprovingAll: approveAllMutation.isPending,
     batchFollow: batchFollowMutation.mutateAsync,
     isBatchFollowing: batchFollowMutation.isPending,
+    clearQueue: clearQueueMutation.mutateAsync,
+    isClearing: clearQueueMutation.isPending,
+    sentPosts: sentQuery.data?.sent || [],
+    sentCount: sentQuery.data?.count || 0,
+    refetchSent: sentQuery.refetch,
+    followedAccounts: followedQuery.data?.followed || [],
+    followedCount: followedQuery.data?.count || 0,
+    refetchFollowed: followedQuery.refetch,
   };
 }

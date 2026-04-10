@@ -56,16 +56,24 @@ async function runJob(job: ScheduledJob) {
       const wsRes = await query('SELECT * FROM workspaces WHERE id = $1', [job.workspace_id]);
       const ws = wsRes.rows[0];
 
-      for (const post of postsRes.rows) {
-        const drafts = await generateDrafts({
-          post_id: post.id,
-          post_text: post.post_text,
-          style: ws?.default_comment_style || 'professional',
-          brand_voice: ws?.brand_voice || '',
-          length: 'medium',
-          emoji_enabled: false,
-        });
+      // 並行為每篇貼文產生留言草稿
+      const draftResults = await Promise.allSettled(
+        postsRes.rows.map(async (post) => {
+          const drafts = await generateDrafts({
+            post_id: post.id,
+            post_text: post.post_text,
+            style: ws?.default_comment_style || 'professional',
+            brand_voice: ws?.brand_voice || '',
+            length: 'medium',
+            emoji_enabled: false,
+          });
+          return { post, drafts };
+        })
+      );
 
+      for (const result of draftResults) {
+        if (result.status !== 'fulfilled') continue;
+        const { post, drafts } = result.value;
         for (const d of drafts) {
           await query(
             `INSERT INTO drafts (id, post_id, style, text, similarity_score, risk_notes)
@@ -73,7 +81,6 @@ async function runJob(job: ScheduledJob) {
             [uuidv4(), post.id, d.style, d.text, d.similarity_score, d.risk_notes]
           );
         }
-
         await query("UPDATE posts SET status = 'DRAFTED' WHERE id = $1", [post.id]);
         draftedCount++;
       }

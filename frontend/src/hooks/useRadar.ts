@@ -10,6 +10,7 @@ import {
   confirmRadarExecution,
   cancelRadarExecution,
   getRadarExecutionStatus,
+  radarExecuteDirect,
 } from '../api/client';
 
 export type ExecutionMode = 'manual' | 'semi-auto';
@@ -38,6 +39,7 @@ export function useRadar(workspaceId: string | null) {
   const [isStarting, setIsStarting] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isRunningAll, setIsRunningAll] = useState(false);
+  const [replyingIds, setReplyingIds] = useState<Set<string>>(new Set());
   const stopAllRef = useRef(false);
   const [commentSettings, setCommentSettingsState] = useState<CommentSettings>(loadCommentSettings);
 
@@ -57,7 +59,7 @@ export function useRadar(workspaceId: string | null) {
   };
 
   const handleSearch = useCallback(
-    async (params: { keywords: string[]; time_range: '1h' | '6h' | '24h' | '7d'; min_followers?: number; max_followers?: number; min_engagement?: number }) => {
+    async (params: { keywords: string[]; time_range: '1h' | '6h' | '24h' | '7d'; min_followers?: number; max_followers?: number; min_engagement?: number; search_mode?: 'fuzzy' | 'precise' }) => {
       if (!workspaceId) { setSearchError('請先選擇工作區'); return; }
       setIsSearching(true);
       setSearchError(null);
@@ -84,12 +86,24 @@ export function useRadar(workspaceId: string | null) {
   );
 
   const assignAction = useCallback((postId: string, action: RadarAction) => {
+    const commentText = buildCommentText();
     setCandidates(prev => prev.map(c =>
       c.post.id === postId
         ? { ...c, selectedAction: c.selectedAction === action ? undefined : action }
         : c
     ));
-  }, []);
+    // 同步更新佇列中的動作與留言文字
+    setRadarQueue(prev => prev.map(item => {
+      if (item.candidate.post.id !== postId) return item;
+      const needsComment = action === 'comment' || action === 'both';
+      return {
+        ...item,
+        action,
+        candidate: { ...item.candidate, selectedAction: action },
+        draftText: needsComment ? (item.draftText || commentText) : item.draftText,
+      };
+    }));
+  }, [buildCommentText]);
 
   const addToQueue = useCallback((candidate: RadarCandidate, draftText?: string) => {
     if (!candidate.selectedAction) return;
@@ -125,13 +139,22 @@ export function useRadar(workspaceId: string | null) {
 
   const clearQueue = useCallback(() => setRadarQueue([]), []);
 
-  // 批次標記追蹤：將佇列中所有 action 改為 'follow' 或 'both'
+  const updateQueueDraftText = useCallback((postId: string, text: string) => {
+    setRadarQueue(prev => prev.map(item =>
+      item.candidate.post.id === postId ? { ...item, draftText: text } : item
+    ));
+  }, []);
+
+  // 批次升級為「兩者」：將佇列所有項目改為 both，並補上留言文字
   const batchMarkFollow = useCallback(() => {
+    const commentText = buildCommentText();
     setRadarQueue(prev => prev.map(item => ({
       ...item,
-      action: item.action === 'comment' ? 'both' : item.action,
+      action: 'both' as RadarAction,
+      candidate: { ...item.candidate, selectedAction: 'both' as RadarAction },
+      draftText: item.draftText || commentText,
     })));
-  }, []);
+  }, [buildCommentText]);
 
   // 生成留言草稿（用於 comment / both）
   const generateDraftForItem = useCallback(async (
@@ -198,7 +221,7 @@ export function useRadar(workspaceId: string | null) {
     setSession(null);
   }, []);
 
-  // 一鍵全部啟動：依序執行佇列中每個項目，等待用戶確認後繼續
+  // 一鍵全部執行：依序 headless 執行佇列中每個項目，不開視窗
   const startAll = useCallback(async (currentQueue: RadarQueueItem[]) => {
     if (currentQueue.length === 0) return;
     stopAllRef.current = false;
@@ -206,41 +229,23 @@ export function useRadar(workspaceId: string | null) {
     try {
       for (const item of currentQueue) {
         if (stopAllRef.current) break;
-        // 啟動這個項目
-        setIsStarting(true);
+        const postId = item.candidate.post.id;
+        setReplyingIds(prev => new Set(prev).add(postId));
         try {
-          const { session: s } = await startRadarExecution(
-            item.candidate.post.id,
-            null,
+          const result = await radarExecuteDirect(
+            postId,
             item.action as RadarActionType,
             item.candidate.post.author_handle,
             item.draftText
           );
-          setSession(s);
+          if (result.success) {
+            setRadarQueue(prev => prev.filter(i => i.candidate.post.id !== postId));
+          } else {
+            console.warn(`[Radar] 項目失敗: ${item.candidate.post.author_handle} — ${result.error}`);
+          }
         } finally {
-          setIsStarting(false);
+          setReplyingIds(prev => { const s = new Set(prev); s.delete(postId); return s; });
         }
-        // 等待 session 清空（用戶確認或取消）
-        await new Promise<void>((resolve) => {
-          const interval = setInterval(async () => {
-            try {
-              const { session: current } = await getRadarExecutionStatus();
-              if (!current || current.status === 'confirmed' || current.status === 'cancelled' || current.status === 'error') {
-                setSession(null);
-                clearInterval(interval);
-                resolve();
-              } else {
-                setSession(current);
-              }
-            } catch {
-              clearInterval(interval);
-              resolve();
-            }
-          }, 1500);
-        });
-        if (stopAllRef.current) break;
-        // 從佇列移除
-        setRadarQueue(prev => prev.filter(i => i.candidate.post.id !== item.candidate.post.id));
       }
     } finally {
       setIsRunningAll(false);
@@ -250,6 +255,28 @@ export function useRadar(workspaceId: string | null) {
 
   const stopAll = useCallback(() => {
     stopAllRef.current = true;
+  }, []);
+
+  // 直接執行（headless，不開瀏覽器視窗）：留言 / 追蹤 / 兩者
+  const replyDirect = useCallback(async (item: RadarQueueItem): Promise<{ success: boolean; error?: string }> => {
+    const postId = item.candidate.post.id;
+    const needsComment = item.action === 'comment' || item.action === 'both';
+    if (needsComment && !item.draftText) return { success: false, error: '留言內容為空' };
+    setReplyingIds(prev => new Set(prev).add(postId));
+    try {
+      const result = await radarExecuteDirect(
+        postId,
+        item.action as RadarActionType,
+        item.candidate.post.author_handle,
+        item.draftText
+      );
+      if (result.success) {
+        setRadarQueue(prev => prev.filter(i => i.candidate.post.id !== postId));
+      }
+      return result;
+    } finally {
+      setReplyingIds(prev => { const s = new Set(prev); s.delete(postId); return s; });
+    }
   }, []);
 
   return {
@@ -262,6 +289,7 @@ export function useRadar(workspaceId: string | null) {
     addAllToQueue,
     removeFromQueue,
     clearQueue,
+    updateQueueDraftText,
     batchMarkFollow,
     generateDraftForItem,
     radarQueue,
@@ -276,6 +304,8 @@ export function useRadar(workspaceId: string | null) {
     cancelExecution,
     startAll,
     stopAll,
+    replyDirect,
+    replyingIds,
     commentSettings,
     setCommentSettings,
     buildCommentText,

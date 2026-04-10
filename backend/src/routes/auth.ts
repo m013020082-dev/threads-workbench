@@ -7,6 +7,7 @@ import {
   addAccount,
   deleteAccount,
   switchAccount,
+  updateAccountCookies,
 } from '../services/threadsAuth';
 import {
   getOAuthUrl,
@@ -49,6 +50,21 @@ router.post('/accounts', async (req: Request, res: Response) => {
     res.json({ success: true, account });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Cookies 格式錯誤' });
+  }
+});
+
+// PATCH /api/auth/accounts/:id — 更新帳號 Cookie
+router.patch('/accounts/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { cookies } = req.body;
+  if (!cookies || typeof cookies !== 'string') {
+    return res.status(400).json({ error: '請提供 cookies 字串' });
+  }
+  try {
+    const account = await updateAccountCookies(id, cookies.trim());
+    res.json({ success: true, account });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : '更新失敗' });
   }
 });
 

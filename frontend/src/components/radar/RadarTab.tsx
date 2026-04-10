@@ -1,9 +1,12 @@
 import { MapPin } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useRadar } from '../../hooks/useRadar';
 import { RadarFilterPanel } from './RadarFilterPanel';
 import { RadarCandidateList } from './RadarCandidateList';
 import { RadarQueuePanel } from './RadarQueuePanel';
 import { RadarCommentSettings } from './RadarCommentSettings';
+import { SentTrackingSection } from '../SentTrackingSection';
+import { getSentPosts, getFollowedAccounts } from '../../api/client';
 
 interface RadarTabProps {
   workspaceId: string | null;
@@ -19,6 +22,7 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
     addToQueue,
     addAllToQueue,
     removeFromQueue,
+    updateQueueDraftText,
     batchMarkFollow,
     radarQueue,
     session,
@@ -30,10 +34,28 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
     isRunningAll,
     startAll,
     stopAll,
+    replyDirect,
+    replyingIds,
     commentSettings,
     setCommentSettings,
     buildCommentText,
   } = useRadar(workspaceId);
+
+  const sentQuery = useQuery({
+    queryKey: ['sent', workspaceId],
+    queryFn: () => workspaceId ? getSentPosts(workspaceId) : Promise.resolve({ sent: [], count: 0 }),
+    enabled: !!workspaceId,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
+
+  const followedQuery = useQuery({
+    queryKey: ['followed', workspaceId],
+    queryFn: () => workspaceId ? getFollowedAccounts(workspaceId) : Promise.resolve({ followed: [], count: 0 }),
+    enabled: !!workspaceId,
+    refetchInterval: 30000,
+    staleTime: 0,
+  });
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -43,7 +65,7 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
           {/* Region badge */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">追互追雷達</span>
+              <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">互追雷達</span>
             </div>
             <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-900/40 border border-blue-700/50 text-blue-300 rounded-full text-xs">
               <MapPin className="w-2.5 h-2.5" />
@@ -88,8 +110,11 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
         <RadarQueuePanel
           radarQueue={radarQueue}
           onRemove={removeFromQueue}
+          onUpdateDraftText={updateQueueDraftText}
           onBatchMarkFollow={batchMarkFollow}
           onExecute={startExecution}
+          onReplyDirect={replyDirect}
+          replyingIds={replyingIds}
           onConfirm={confirmExecution}
           onCancel={cancelExecution}
           session={session}
@@ -99,6 +124,16 @@ export function RadarTab({ workspaceId }: RadarTabProps) {
           onStartAll={() => startAll(radarQueue)}
           onStopAll={stopAll}
         />
+
+        {workspaceId && (
+          <SentTrackingSection
+            sentPosts={sentQuery.data?.sent || []}
+            followedAccounts={followedQuery.data?.followed || []}
+            workspaceId={workspaceId}
+            onFollowSuccess={() => followedQuery.refetch()}
+            onRefresh={() => sentQuery.refetch()}
+          />
+        )}
       </aside>
     </div>
   );

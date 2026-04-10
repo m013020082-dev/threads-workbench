@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { query } from '../db/client';
+import { query } from '../db/client'; // reload
 
 const router = Router();
 
@@ -35,7 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
       `SELECT p.*, json_agg(d.* ORDER BY d.created_at DESC) FILTER (WHERE d.id IS NOT NULL) as drafts
        FROM posts p
        LEFT JOIN drafts d ON d.post_id = p.id
-       WHERE p.workspace_id = $1 AND p.status IN ('DRAFTED','APPROVED','READY_FOR_REVIEW')
+       WHERE p.workspace_id = $1 AND p.status IN ('APPROVED','READY_FOR_REVIEW')
        GROUP BY p.id
        ORDER BY p.score DESC`,
       [workspace_id]
@@ -84,7 +84,7 @@ router.post('/approve-all', async (req: Request, res: Response) => {
               array_length(d.risk_warnings, 1) as warning_count
        FROM posts p
        JOIN drafts d ON d.post_id = p.id AND d.approved = false
-       WHERE p.workspace_id = $1 AND p.status IN ('DRAFTED','READY_FOR_REVIEW')
+       WHERE p.workspace_id = $1 AND p.status IN ('APPROVED','READY_FOR_REVIEW')
        ORDER BY p.id, COALESCE(array_length(d.risk_warnings, 1), 0) ASC, d.similarity_score ASC`,
       [workspace_id]
     );
@@ -131,6 +131,91 @@ router.post('/batch-follow', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Batch-follow error:', err);
     res.status(500).json({ error: 'Failed to batch follow' });
+  }
+});
+
+// POST /api/queue/clear — 清空佇列（將所有 SCORED/DRAFTED/APPROVED 標記為 SKIPPED）
+router.post('/clear', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.body;
+    if (!workspace_id) return res.status(400).json({ error: 'workspace_id required' });
+    const result = await query(
+      `UPDATE posts SET status = 'SKIPPED'
+       WHERE workspace_id = $1 AND status IN ('SCORED','DRAFTED','APPROVED','READY_FOR_REVIEW')`,
+      [workspace_id]
+    );
+    res.json({ cleared: result.rowCount ?? 0, success: true });
+  } catch (err) {
+    console.error('Clear queue error:', err);
+    res.status(500).json({ error: 'Failed to clear queue' });
+  }
+});
+
+// POST /api/queue/sent/clear — 清除已發文記錄（POSTED → ARCHIVED）
+router.post('/sent/clear', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.body;
+    if (!workspace_id) return res.status(400).json({ error: 'workspace_id required' });
+    const result = await query(
+      `UPDATE posts SET status = 'ARCHIVED' WHERE workspace_id = $1 AND status = 'POSTED'`,
+      [workspace_id]
+    );
+    res.json({ cleared: result.rowCount ?? 0, success: true });
+  } catch (err) {
+    console.error('Clear sent error:', err);
+    res.status(500).json({ error: 'Failed to clear sent posts' });
+  }
+});
+
+// GET /api/queue/followed — 已追蹤的帳號（最近 50 筆）
+router.get('/followed', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    if (!workspace_id) return res.status(400).json({ error: 'workspace_id required' });
+
+    const result = await query(
+      `SELECT i.id, i.post_id, i.executed_at, p.author_handle, p.post_url, p.post_text
+       FROM interactions i
+       LEFT JOIN posts p ON p.id = i.post_id
+       WHERE i.workspace_id = $1 AND i.action = 'follow'
+       ORDER BY i.executed_at DESC NULLS LAST
+       LIMIT 50`,
+      [workspace_id]
+    );
+
+    res.json({ followed: result.rows, count: result.rows.length, success: true });
+  } catch (err) {
+    console.error('Followed fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch followed' });
+  }
+});
+
+// GET /api/queue/sent — 已發出的貼文（最近 50 筆）
+router.get('/sent', async (req: Request, res: Response) => {
+  try {
+    const { workspace_id } = req.query;
+    if (!workspace_id) return res.status(400).json({ error: 'workspace_id required' });
+
+    const result = await query(
+      `SELECT p.*, json_agg(d.* ORDER BY d.created_at DESC) FILTER (WHERE d.id IS NOT NULL AND d.approved = true) as drafts
+       FROM posts p
+       LEFT JOIN drafts d ON d.post_id = p.id
+       WHERE p.workspace_id = $1 AND p.status = 'POSTED'
+       GROUP BY p.id
+       ORDER BY p.created_at DESC
+       LIMIT 50`,
+      [workspace_id]
+    );
+
+    const sent = result.rows.map(row => ({
+      ...transformPost(row),
+      drafts: Array.isArray(row.drafts) ? row.drafts.map(transformDraft) : [],
+    }));
+
+    res.json({ sent, count: sent.length, success: true });
+  } catch (err) {
+    console.error('Sent posts fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch sent posts' });
   }
 });
 

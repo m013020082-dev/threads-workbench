@@ -21,7 +21,7 @@ async function callClaude(prompt: string): Promise<string> {
         { role: 'system', content: SYSTEM_PROMPT_TC },
         { role: 'user', content: prompt },
       ],
-      max_tokens: 2048,
+      max_tokens: 4096,
       temperature: 0.8,
     }),
   });
@@ -99,6 +99,12 @@ ${emojiGuide}${replyNoteSection}
 
 原始貼文：
 "${request.post_text}"
+
+【格式強制規定】一句話 = 一行。句子結束立刻換行，下一句從新的一行開始。每行之間空一行。
+禁止在同一行寫兩句話。例如「說真的不錯，然後我就買了。」要改成：
+「說真的不錯。
+
+然後我就買了。」
 
 請生成 3 個不同角度的留言草稿，每個都要符合上面的發文邏輯。
 不可帶有廣告或垃圾郵件性質。

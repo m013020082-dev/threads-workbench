@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
-import { getAccounts, addAccount, deleteAccount, switchAccount, AccountInfo, api } from '../api/client';
+import { getAccounts, addAccount, updateAccountCookies, deleteAccount, switchAccount, AccountInfo, api } from '../api/client';
 
 interface Props {
   activeAccount: Pick<AccountInfo, 'id' | 'name' | 'username'> | null;
@@ -20,6 +20,12 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
   const [newCookies, setNewCookies] = useState('');
   const [addError, setAddError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+
+  // Update cookie state
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updateCookies, setUpdateCookies] = useState('');
+  const [updateError, setUpdateError] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Threads API OAuth state
   const [apiStatus, setApiStatus] = useState<{ connected: boolean; username?: string; expired?: boolean } | null>(null);
@@ -93,6 +99,22 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     } catch {}
   };
 
+  const handleUpdateCookies = async () => {
+    if (!updatingId || !updateCookies.trim()) return;
+    setIsUpdating(true);
+    setUpdateError('');
+    try {
+      await updateAccountCookies(updatingId, updateCookies.trim());
+      setUpdatingId(null);
+      setUpdateCookies('');
+      await fetchAccounts();
+      onAccountChange();
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : '更新失敗');
+    }
+    setIsUpdating(false);
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('確定要刪除這個帳號？')) return;
     try {
@@ -156,8 +178,8 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                 <p className="text-xs text-gray-500 text-center py-6">尚未設定任何帳號</p>
               ) : (
                 accounts.map((acc) => (
+                  <div key={acc.id}>
                   <div
-                    key={acc.id}
                     className={clsx(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors',
                       acc.is_active
@@ -195,11 +217,50 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                     )}
 
                     <button
+                      onClick={() => { setUpdatingId(acc.id); setUpdateCookies(''); setUpdateError(''); }}
+                      title="更新 Cookie"
+                      className="text-gray-600 hover:text-yellow-400 flex-shrink-0 p-1 rounded"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
+
+                    <button
                       onClick={() => handleDelete(acc.id)}
                       className="text-gray-600 hover:text-red-400 flex-shrink-0 p-1 rounded"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
+                  </div>
+
+                  {/* 更新 Cookie 表單（內嵌展開） */}
+                  {updatingId === acc.id && (
+                    <div className="mt-2 space-y-2 border-t border-gray-700 pt-2">
+                      <p className="text-[10px] text-yellow-400">貼入新的 Cookie JSON 以更新帳號 Session：</p>
+                      <textarea
+                        value={updateCookies}
+                        onChange={e => setUpdateCookies(e.target.value)}
+                        placeholder='[{"name":"sessionid","value":"..."}]'
+                        rows={3}
+                        className="w-full px-2 py-1.5 text-[10px] bg-gray-900 border border-gray-600 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-yellow-500 font-mono resize-none"
+                      />
+                      {updateError && <p className="text-[10px] text-red-400">{updateError}</p>}
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={handleUpdateCookies}
+                          disabled={isUpdating || !updateCookies.trim()}
+                          className="flex-1 py-1 text-[10px] font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors disabled:opacity-50"
+                        >
+                          {isUpdating ? '更新中...' : '儲存新 Cookie'}
+                        </button>
+                        <button
+                          onClick={() => { setUpdatingId(null); setUpdateCookies(''); setUpdateError(''); }}
+                          className="flex-1 py-1 text-[10px] text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   </div>
                 ))
               )}

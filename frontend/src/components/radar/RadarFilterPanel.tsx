@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, X, Clock, Users, Plus, TrendingUp } from 'lucide-react';
+import { Search, X, Clock, Users, Plus, TrendingUp, Waves, Crosshair } from 'lucide-react';
 import clsx from 'clsx';
 
 const TIME_RANGES = [
@@ -9,6 +9,8 @@ const TIME_RANGES = [
   { value: '7d', label: '7天' },
 ] as const;
 
+const DEFAULT_KEYWORDS = ['互追', '雙追', '不退'];
+
 interface RadarFilterPanelProps {
   onSearch: (params: {
     keywords: string[];
@@ -16,14 +18,16 @@ interface RadarFilterPanelProps {
     min_followers?: number;
     max_followers?: number;
     min_engagement?: number;
+    search_mode?: 'fuzzy' | 'precise';
   }) => Promise<void>;
   isSearching: boolean;
   activeWorkspaceId: string | null;
 }
 
 export function RadarFilterPanel({ onSearch, isSearching, activeWorkspaceId }: RadarFilterPanelProps) {
-  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywords, setKeywords] = useState<string[]>(DEFAULT_KEYWORDS);
   const [keywordInput, setKeywordInput] = useState('');
+  const [searchMode, setSearchMode] = useState<'fuzzy' | 'precise'>('fuzzy');
   const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h' | '7d'>('24h');
   const [minFollowers, setMinFollowers] = useState('');
   const [maxFollowers, setMaxFollowers] = useState('');
@@ -31,7 +35,7 @@ export function RadarFilterPanel({ onSearch, isSearching, activeWorkspaceId }: R
   const [error, setError] = useState('');
 
   const addKeyword = () => {
-    const trimmed = keywordInput.trim().toLowerCase();
+    const trimmed = keywordInput.trim();
     if (trimmed && !keywords.includes(trimmed)) setKeywords(prev => [...prev, trimmed]);
     setKeywordInput('');
   };
@@ -44,11 +48,12 @@ export function RadarFilterPanel({ onSearch, isSearching, activeWorkspaceId }: R
     if (!activeWorkspaceId) { setError('請先選擇工作區'); return; }
     setError('');
     await onSearch({
-      keywords,                // 可以是空陣列
+      keywords,
       time_range: timeRange,
       min_followers: minFollowers ? parseInt(minFollowers) : undefined,
       max_followers: maxFollowers ? parseInt(maxFollowers) : undefined,
       min_engagement: minEngagement ? parseInt(minEngagement) : undefined,
+      search_mode: searchMode,
     });
   };
 
@@ -57,7 +62,7 @@ export function RadarFilterPanel({ onSearch, isSearching, activeWorkspaceId }: R
       <div>
         <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">篩選條件</h2>
 
-        {/* 關鍵字（選填） */}
+        {/* 關鍵字 */}
         <div className="mb-3">
           <label className="flex items-center justify-between mb-1.5">
             <span className="flex items-center gap-1.5 text-xs text-gray-400">
@@ -98,6 +103,44 @@ export function RadarFilterPanel({ onSearch, isSearching, activeWorkspaceId }: R
               不填關鍵字 → 直接從已蒐集的貼文中篩選互追候選人
             </p>
           )}
+        </div>
+
+        {/* 搜尋模式 */}
+        <div className="mb-3">
+          <label className="flex items-center gap-1.5 text-xs text-gray-400 mb-1.5">
+            <Search className="w-3 h-3" /> 搜尋模式
+          </label>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              onClick={() => setSearchMode('fuzzy')}
+              className={clsx(
+                'flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded transition-colors border',
+                searchMode === 'fuzzy'
+                  ? 'bg-indigo-600 border-indigo-500 text-white'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+              )}
+            >
+              <Waves className="w-3 h-3" />
+              模糊
+            </button>
+            <button
+              onClick={() => setSearchMode('precise')}
+              className={clsx(
+                'flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded transition-colors border',
+                searchMode === 'precise'
+                  ? 'bg-indigo-600 border-indigo-500 text-white'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'
+              )}
+            >
+              <Crosshair className="w-3 h-3" />
+              精準
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mt-1">
+            {searchMode === 'fuzzy'
+              ? '模糊：AI 擴展同義詞、相關話題'
+              : '精準：只找包含關鍵字的貼文'}
+          </p>
         </div>
 
         {/* 時間範圍 */}

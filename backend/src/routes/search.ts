@@ -71,7 +71,11 @@ router.post('/search', async (req: Request, res: Response) => {
     res.json({ results, total: results.length, success: true });
   } catch (err) {
     console.error('Search error:', err);
-    res.status(500).json({ error: 'Search failed', detail: String(err) });
+    const msg = String(err);
+    if (msg.includes('COOKIE_EXPIRED')) {
+      return res.status(401).json({ error: 'Cookie 已失效，請到帳號管理更新 Cookie', cookieExpired: true });
+    }
+    res.status(500).json({ error: 'Search failed', detail: msg });
   }
 });
 

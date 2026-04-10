@@ -129,6 +129,17 @@ export async function scrapeThreadsPosts(
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(remaining - 1000, 15000) });
         await page.waitForTimeout(1500);
 
+        // 偵測是否跳到登入頁面（Cookie 失效）
+        const currentUrl = page.url();
+        const pageTitle = await page.title();
+        const isLoginWall = currentUrl.includes('/login') || currentUrl.includes('/accounts/login')
+          || pageTitle.includes('Log in') || pageTitle.includes('登入')
+          || await page.locator('input[name="username"], input[type="password"]').count().then(n => n > 0).catch(() => false);
+        if (isLoginWall) {
+          console.error('[Scraper] 偵測到登入牆，Cookie 已失效！請到帳號管理更新 Cookie。');
+          throw new Error('COOKIE_EXPIRED: Threads 登入 Cookie 已失效，請在帳號管理貼上最新 Cookie 後重試');
+        }
+
         // 依時間範圍決定捲動次數（範圍越大，捲越多來取得更舊的貼文）
         const scrollCount = scrollCountForRange(timeRange);
         for (let i = 0; i < scrollCount; i++) {

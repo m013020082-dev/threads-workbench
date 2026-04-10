@@ -99,7 +99,7 @@ export interface SearchParams {
   search_mode?: 'fuzzy' | 'precise';
 }
 
-// 追互追雷達
+// 互追雷達
 export type RadarAction = 'follow' | 'comment' | 'both';
 
 export interface RadarCandidate {

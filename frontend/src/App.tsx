@@ -65,6 +65,14 @@ export default function App() {
     approveAll,
     isApprovingAll,
     batchFollow,
+    clearQueue,
+    isClearing,
+    sentPosts,
+    sentCount,
+    refetchSent,
+    followedAccounts,
+    followedCount,
+    refetchFollowed,
   } = useQueue(activeWorkspaceId);
 
   const {
@@ -190,7 +198,7 @@ export default function App() {
             )}
           >
             <Radio className="w-3 h-3" />
-            追互追雷達
+            互追雷達
           </button>
           <button
             onClick={() => setActiveTab('autopost')}
@@ -330,11 +338,20 @@ export default function App() {
               onApproveAll={approveAll}
               onBatchFollow={batchFollow}
               onExecute={startExecution}
+              onClearQueue={clearQueue}
               isSkipping={isSkipping}
               isApprovingAll={isApprovingAll}
+              isClearing={isClearing}
+              sentPosts={sentPosts}
+              sentCount={sentCount}
+              refetchSent={refetchSent}
+              followedAccounts={followedAccounts}
+              followedCount={followedCount}
+              refetchFollowed={refetchFollowed}
               executionMode={executionMode}
               onModeChange={setExecutionMode}
               refetch={refetchQueue}
+              workspaceId={activeWorkspaceId || ''}
             />
           </div>
 

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Search as SearchIcon, User, ThumbsUp, MessageCircle, Repeat2, Sparkles, ListPlus, ExternalLink, ChevronDown, ChevronUp, Pencil, Check, X, Loader2 } from 'lucide-react';
+import { Search as SearchIcon, User, ThumbsUp, MessageCircle, Repeat2, Sparkles, ListPlus, ExternalLink, ChevronDown, ChevronUp, Pencil, Check, X, Loader2, Send, CheckCircle2, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { Post, RankingResult, Draft } from '../types';
 import { DraftCard } from './DraftCard';
-import { updatePost } from '../api/client';
+import { updatePost, radarExecuteDirect } from '../api/client';
 
 interface PostListProps {
   results: RankingResult[];
@@ -82,6 +82,12 @@ function PostCard({ result, onGenerateDrafts, onAddToQueue, onApproveDraft, isGe
   const [isSaving, setIsSaving] = useState(false);
   const [currentText, setCurrentText] = useState(post.post_text);
 
+  // 快速留言
+  const [showQuickReply, setShowQuickReply] = useState(false);
+  const [quickText, setQuickText] = useState('已追！');
+  const [quickStatus, setQuickStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [quickError, setQuickError] = useState('');
+
   const truncatedText = currentText.length > 180
     ? currentText.substring(0, 180) + '...'
     : currentText;
@@ -103,6 +109,25 @@ function PostCard({ result, onGenerateDrafts, onAddToQueue, onApproveDraft, isGe
   const handleCancelEdit = () => {
     setEditText(currentText);
     setIsEditing(false);
+  };
+
+  const handleQuickReply = async () => {
+    if (!quickText.trim()) return;
+    setQuickStatus('sending');
+    setQuickError('');
+    try {
+      const res = await radarExecuteDirect(post.id, 'comment', post.author_handle, quickText.trim());
+      if (res.success) {
+        setQuickStatus('success');
+        setShowQuickReply(false);
+      } else {
+        setQuickStatus('error');
+        setQuickError(res.error || '送出失敗');
+      }
+    } catch (err: any) {
+      setQuickStatus('error');
+      setQuickError(err.message || '送出失敗');
+    }
   };
 
   const handleGenerateDrafts = async () => {
@@ -258,40 +283,94 @@ function PostCard({ result, onGenerateDrafts, onAddToQueue, onApproveDraft, isGe
 
       {/* Actions */}
       {post.status !== 'SKIPPED' && post.status !== 'POSTED' && (
-        <div className="px-3 pb-3 flex gap-2">
-          <div className="flex-1 flex gap-1.5">
-            <select
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              className="px-2 py-1.5 text-xs bg-gray-700 border border-gray-600 rounded text-gray-300 focus:outline-none focus:border-indigo-500"
-            >
-              <option value="professional">專業</option>
-              <option value="casual">輕鬆</option>
-              <option value="witty">幽默</option>
-              <option value="empathetic">同理心</option>
-              <option value="educational">教育性</option>
-            </select>
-            <button
-              onClick={handleGenerateDrafts}
-              disabled={isGenerating || isGeneratingDrafts}
-              className={clsx(
-                'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors flex-1 justify-center',
-                isGenerating || isGeneratingDrafts
-                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                  : 'bg-purple-800 hover:bg-purple-700 text-purple-200'
+        <div className="px-3 pb-3 space-y-2">
+          {/* 快速留言區 */}
+          {quickStatus === 'success' ? (
+            <div className="flex items-center gap-1.5 text-xs text-green-400 py-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              留言已送出
+            </div>
+          ) : (
+            <>
+              {!showQuickReply ? (
+                <button
+                  onClick={() => setShowQuickReply(true)}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-teal-800/50 hover:bg-teal-700/50 border border-teal-700/50 text-teal-300 rounded text-xs font-medium transition-colors"
+                >
+                  <Send className="w-3 h-3" />
+                  快速留言（已追）
+                </button>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={quickText}
+                      onChange={e => setQuickText(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleQuickReply()}
+                      className="flex-1 px-2 py-1.5 bg-gray-900 border border-teal-700/50 rounded text-xs text-gray-200 focus:outline-none focus:border-teal-500"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleQuickReply}
+                      disabled={quickStatus === 'sending' || !quickText.trim()}
+                      className="px-2.5 py-1.5 bg-teal-700 hover:bg-teal-600 text-white rounded text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {quickStatus === 'sending' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => { setShowQuickReply(false); setQuickStatus('idle'); setQuickError(''); }}
+                      className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-400 rounded text-xs transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {quickStatus === 'error' && (
+                    <div className="flex items-center gap-1 text-xs text-red-400">
+                      <XCircle className="w-3 h-3" />
+                      {quickError}
+                    </div>
+                  )}
+                </div>
               )}
+            </>
+          )}
+
+          <div className="flex gap-2">
+            <div className="flex-1 flex gap-1.5">
+              <select
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                className="px-2 py-1.5 text-xs bg-gray-700 border border-gray-600 rounded text-gray-300 focus:outline-none focus:border-indigo-500"
+              >
+                <option value="professional">專業</option>
+                <option value="casual">輕鬆</option>
+                <option value="witty">幽默</option>
+                <option value="empathetic">同理心</option>
+                <option value="educational">教育性</option>
+              </select>
+              <button
+                onClick={handleGenerateDrafts}
+                disabled={isGenerating || isGeneratingDrafts}
+                className={clsx(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium transition-colors flex-1 justify-center',
+                  isGenerating || isGeneratingDrafts
+                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-purple-800 hover:bg-purple-700 text-purple-200'
+                )}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {isGenerating ? '生成中...' : '生成草稿'}
+              </button>
+            </div>
+            <button
+              onClick={() => onAddToQueue(post.id)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs font-medium transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              {isGenerating ? '生成中...' : '生成草稿'}
+              <ListPlus className="w-3.5 h-3.5" />
+              加入佇列
             </button>
           </div>
-          <button
-            onClick={() => onAddToQueue(post.id)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs font-medium transition-colors"
-          >
-            <ListPlus className="w-3.5 h-3.5" />
-            加入佇列
-          </button>
         </div>
       )}
 

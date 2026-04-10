@@ -73,6 +73,17 @@ export async function updateAccountUsername(id: string, username: string): Promi
   await query('UPDATE accounts SET username = $1 WHERE id = $2', [username, id]);
 }
 
+export async function updateAccountCookies(id: string, rawCookies: string): Promise<Account> {
+  const sessionData = buildStorageState(rawCookies);
+  const res = await query(
+    `UPDATE accounts SET session_data = $1 WHERE id = $2
+     RETURNING id, name, username, is_active, created_at`,
+    [JSON.stringify(sessionData), id]
+  );
+  if (!res.rows[0]) throw new Error('帳號不存在');
+  return res.rows[0];
+}
+
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 export async function hasSession(): Promise<boolean> {

@@ -247,7 +247,7 @@ export function BrandProfilePage({ workspaceId }: Props) {
               <label className="block text-xs font-medium text-gray-400 mb-1">每日發文篇數</label>
               <input
                 type="number"
-                min={1} max={10}
+                min={1} max={20}
                 value={profile.posts_per_day || 1}
                 onChange={e => set('posts_per_day', parseInt(e.target.value) || 1)}
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-indigo-500"

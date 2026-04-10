@@ -89,6 +89,35 @@ export async function approveAll(workspaceId: string): Promise<{ approved: numbe
   return response.data;
 }
 
+export async function clearQueue(workspaceId: string): Promise<{ cleared: number }> {
+  const response = await api.post<{ cleared: number; success: boolean }>('/queue/clear', { workspace_id: workspaceId });
+  return response.data;
+}
+
+export async function getSentPosts(workspaceId: string): Promise<{ sent: Post[]; count: number }> {
+  const response = await api.get<{ sent: Post[]; count: number; success: boolean }>(`/queue/sent?workspace_id=${workspaceId}`);
+  return response.data;
+}
+
+export interface FollowedRecord {
+  id: string;
+  post_id: string;
+  executed_at: string;
+  author_handle: string;
+  post_url: string;
+  post_text: string;
+}
+
+export async function getFollowedAccounts(workspaceId: string): Promise<{ followed: FollowedRecord[]; count: number }> {
+  const response = await api.get<{ followed: FollowedRecord[]; count: number; success: boolean }>(`/queue/followed?workspace_id=${workspaceId}`);
+  return response.data;
+}
+
+export async function clearSentPosts(workspaceId: string): Promise<{ cleared: number }> {
+  const response = await api.post<{ cleared: number; success: boolean }>('/queue/sent/clear', { workspace_id: workspaceId });
+  return response.data;
+}
+
 export async function batchFollow(postIds: string[]): Promise<{ updated: number }> {
   const response = await api.post<{ updated: number; success: boolean }>('/queue/batch-follow', { post_ids: postIds });
   return response.data;
@@ -130,8 +159,8 @@ export async function cancelExecution(): Promise<void> {
   await api.post('/execute/cancel');
 }
 
-export async function directReply(postId: string, draftId: string): Promise<{ success: boolean; error?: string; post_id: string }> {
-  const response = await api.post('/execute/reply-direct', { post_id: postId, draft_id: draftId });
+export async function directReply(postId: string, draftId: string, draftText?: string): Promise<{ success: boolean; error?: string; post_id: string }> {
+  const response = await api.post('/execute/reply-direct', { post_id: postId, draft_id: draftId, draft_text: draftText });
   return response.data;
 }
 
@@ -166,6 +195,21 @@ export async function cancelRadarExecution(): Promise<void> {
 
 export async function getRadarExecutionStatus(): Promise<{ session: ExecutionSession | null }> {
   const response = await api.get<{ session: ExecutionSession | null; success: boolean }>('/radar/execute/status');
+  return response.data;
+}
+
+export async function radarExecuteDirect(
+  postId: string,
+  actionType: RadarActionType,
+  authorHandle: string,
+  draftText?: string
+): Promise<{ success: boolean; error?: string; post_id: string; action_type: string }> {
+  const response = await api.post('/radar/execute-direct', {
+    post_id: postId,
+    action_type: actionType,
+    author_handle: authorHandle,
+    draft_text: draftText || '',
+  });
   return response.data;
 }
 
@@ -262,6 +306,11 @@ export async function getAccounts(): Promise<{ accounts: AccountInfo[] }> {
 
 export async function addAccount(name: string, cookies: string): Promise<{ success: boolean; account: AccountInfo }> {
   const response = await api.post('/auth/accounts', { name, cookies });
+  return response.data;
+}
+
+export async function updateAccountCookies(id: string, cookies: string): Promise<{ success: boolean; account: AccountInfo }> {
+  const response = await api.patch(`/auth/accounts/${id}`, { cookies });
   return response.data;
 }
 
@@ -458,6 +507,18 @@ export async function getScheduledPosts(workspaceId: string): Promise<{ posts: S
 
 export async function cancelScheduledPost(id: string): Promise<{ success: boolean }> {
   const response = await api.delete(`/pub/scheduled/${id}`);
+  return response.data;
+}
+
+export async function batchSchedulePosts(params: {
+  workspace_id: string;
+  start_date: string;
+  end_date: string;
+  posts_per_day: number;
+  hour_start: number;
+  hour_end: number;
+}): Promise<{ message: string; total: number; success: boolean }> {
+  const response = await api.post('/pub/schedule/batch', params);
   return response.data;
 }
 

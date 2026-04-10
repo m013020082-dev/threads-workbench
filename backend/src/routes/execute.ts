@@ -84,7 +84,8 @@ router.post('/reply-direct', async (req: Request, res: Response) => {
     if (draftRes.rows.length === 0) return res.status(404).json({ error: 'Draft not found' });
 
     const { post_url, workspace_id } = postRes.rows[0];
-    let { draft_text } = draftRes.rows[0];
+    // 若前端傳來編輯後的文字，優先使用；否則用 DB 裡的草稿
+    let draft_text: string = req.body.draft_text?.trim() || draftRes.rows[0].draft_text;
 
     // 自動將簡體字轉換為繁體
     const { hasSimplified, chars } = detectSimplifiedChinese(draft_text);
@@ -93,15 +94,9 @@ router.post('/reply-direct', async (req: Request, res: Response) => {
       draft_text = convertToTraditional(draft_text);
     }
 
-    // 優先走官方 API（shortcode 換算 media ID），失敗才退回 Cookie/Playwright
-    let result = await replyViaApi(post_url, draft_text);
-    if (result.success) {
-      console.log(`[Execute] 回覆模式: Threads API → 成功`);
-    } else {
-      console.log(`[Execute] Threads API 失敗 (${result.error})，退回 Cookie/Playwright`);
-      result = await replyWithCookies(post_url, draft_text);
-      console.log(`[Execute] 回覆模式: Cookie/Playwright → ${result.success ? '成功' : result.error}`);
-    }
+    // 直接用 Cookie/Playwright（不走官方 API，避免 media_id 攔截失敗問題）
+    const result = await replyWithCookies(post_url, draft_text);
+    console.log(`[Execute] 回覆模式: Cookie/Playwright → ${result.success ? '成功' : result.error}`);
 
     if (result.success) {
       await query("UPDATE posts SET status = 'POSTED' WHERE id = $1", [post_id]);
