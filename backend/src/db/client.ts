@@ -6,7 +6,7 @@ dotenv.config();
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  connectionTimeoutMillis: 3000,
+  connectionTimeoutMillis: 10000,
 });
 
 let useMemory = false;
@@ -22,6 +22,20 @@ export async function checkConnection(): Promise<boolean> {
     return false;
   }
 }
+
+// Periodically retry DB connection when in memory mode
+setInterval(async () => {
+  if (useMemory && process.env.DATABASE_URL) {
+    try {
+      await pool.query('SELECT 1');
+      useMemory = false;
+      console.log('[DB] PostgreSQL 重新連線成功，切換回資料庫模式');
+      await ensureSchema();
+    } catch {
+      // still unavailable
+    }
+  }
+}, 30000);
 
 export async function query(text: string, params?: unknown[]): Promise<{ rows: any[]; rowCount: number | null }> {
   if (useMemory) {
