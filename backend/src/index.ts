@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { checkConnection, ensureSchema } from './db/client';
+import { runMigrations } from './db/migrate';
 import { startScheduler } from './services/schedulerService';
 import searchRouter from './routes/search';
 import draftsRouter from './routes/drafts';
@@ -117,6 +118,7 @@ async function main() {
     console.warn('Please set DATABASE_URL in your .env file and ensure PostgreSQL is running.');
   } else {
     console.log('Database connection established.');
+    await runMigrations();
     await ensureSchema();
     try {
       await startScheduler();
