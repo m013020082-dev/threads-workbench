@@ -95,6 +95,27 @@ export async function exchangeCodeForToken(code: string): Promise<{
   return { userId, username, accessToken, expiresAt };
 }
 
+// ─── Manual Token ────────────────────────────────────────────────────────────
+
+export async function verifyAndSaveManualToken(accessToken: string): Promise<{ userId: string; username: string }> {
+  // Verify token by calling /me endpoint
+  const meRes = await fetch(`${THREADS_API}/me?fields=id,username&access_token=${accessToken}`);
+  const meData = await meRes.json() as any;
+
+  if (meData.error) {
+    throw new Error(`Token 驗證失敗: ${meData.error.message || JSON.stringify(meData.error)}`);
+  }
+
+  const userId: string = meData.id;
+  const username: string = meData.username || '';
+
+  // Long-lived tokens have ~60 days expiry; use 0 to mean "unknown/no expiry"
+  const expiresAt = 0;
+
+  await saveApiAccount({ userId, username, accessToken, expiresAt });
+  return { userId, username };
+}
+
 // ─── Account helpers ─────────────────────────────────────────────────────────
 
 export async function getActiveApiAccount(): Promise<{

@@ -16,6 +16,7 @@ import {
   exchangeCodeForToken,
   saveApiAccount,
   getActiveApiAccount,
+  verifyAndSaveManualToken,
 } from '../services/threadsApiService';
 
 const router = Router();
@@ -153,6 +154,20 @@ router.get('/threads/callback', async (req: Request, res: Response) => {
     console.error('[OAuth] callback 失敗:', err.message);
     const msg = encodeURIComponent(err.message);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?threads_auth=error&msg=${msg}`);
+  }
+});
+
+// POST /api/auth/threads/manual-token — 手動輸入 Access Token
+router.post('/threads/manual-token', async (req: Request, res: Response) => {
+  const { accessToken } = req.body;
+  if (!accessToken || typeof accessToken !== 'string') {
+    return res.status(400).json({ error: '請提供 Access Token' });
+  }
+  try {
+    const { userId, username } = await verifyAndSaveManualToken(accessToken.trim());
+    res.json({ success: true, username, userId });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
 });
 

@@ -30,9 +30,12 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     setTimeout(() => setCmdCopied(false), 2000);
   };
 
-  // Threads API OAuth
+  // Threads API Token
   const [apiStatus, setApiStatus] = useState<{ connected: boolean; username?: string; expired?: boolean } | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [showTokenForm, setShowTokenForm] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenStatus, setTokenStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [tokenMessage, setTokenMessage] = useState('');
 
   const fetchApiStatus = async () => {
     try {
@@ -41,14 +44,24 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     } catch {}
   };
 
-  const handleConnectApi = async () => {
-    setIsConnecting(true);
+  const handleSaveToken = async () => {
+    if (!tokenInput.trim()) return;
+    setTokenStatus('loading');
+    setTokenMessage('驗證 Token 中...');
     try {
-      const res = await api.get('/auth/threads/oauth-url');
-      // 直接導向 OAuth 頁面（同視窗），避免彈出視窗被封鎖
-      window.location.href = res.data.url;
-    } catch {
-      setIsConnecting(false);
+      const res = await api.post('/auth/threads/manual-token', { accessToken: tokenInput.trim() });
+      setTokenStatus('success');
+      setTokenMessage(`連接成功：@${res.data.username}`);
+      await fetchApiStatus();
+      setTimeout(() => {
+        setShowTokenForm(false);
+        setTokenStatus('idle');
+        setTokenInput('');
+        setTokenMessage('');
+      }, 2000);
+    } catch (err: any) {
+      setTokenStatus('error');
+      setTokenMessage(err?.response?.data?.error || 'Token 無效，請確認後重試');
     }
   };
 
@@ -256,32 +269,78 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
             {/* Threads Official API */}
             <div className="px-4 py-3 border-t border-gray-800">
               <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2">官方 API（回覆用）</p>
-              {apiStatus?.connected ? (
+              {apiStatus?.connected && !showTokenForm ? (
                 <div className="flex items-center gap-2 px-3 py-2 bg-green-900/20 border border-green-800/40 rounded-lg">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-green-300">已連接</p>
                     {apiStatus.username && <p className="text-[10px] text-green-500">@{apiStatus.username}</p>}
                   </div>
-                  <button onClick={handleConnectApi} className="text-[10px] text-gray-400 hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-700">
-                    重新授權
+                  <button onClick={() => setShowTokenForm(true)} className="text-[10px] text-gray-400 hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-700">
+                    更換 Token
                   </button>
+                </div>
+              ) : showTokenForm ? (
+                <div className="space-y-2">
+                  <div className="bg-gray-800/60 rounded-lg p-3 text-[11px] text-gray-400 space-y-1">
+                    <p className="text-gray-300 font-medium text-xs">取得 Access Token：</p>
+                    <p>1. 前往 <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:text-indigo-300">Meta Graph API Explorer <ExternalLink className="w-3 h-3 inline" /></a></p>
+                    <p>2. 選擇你的 Threads App → 產生 User Token</p>
+                    <p>3. 勾選 <code className="bg-gray-700 px-1 rounded">threads_basic</code> 和 <code className="bg-gray-700 px-1 rounded">threads_content_publish</code></p>
+                    <p>4. 複製 Token 貼到下方</p>
+                  </div>
+                  <textarea
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    placeholder="貼上 Access Token..."
+                    rows={3}
+                    disabled={tokenStatus === 'loading'}
+                    className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 disabled:opacity-50 font-mono resize-none"
+                  />
+                  {tokenStatus !== 'idle' && (
+                    <div className={clsx(
+                      'flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
+                      tokenStatus === 'success' ? 'bg-green-900/30 border border-green-800/50 text-green-300' :
+                      tokenStatus === 'error' ? 'bg-red-900/30 border border-red-800/50 text-red-300' :
+                      'bg-indigo-900/20 border border-indigo-800/40 text-indigo-300'
+                    )}>
+                      {tokenStatus === 'loading' && <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />}
+                      {tokenStatus === 'success' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
+                      {tokenStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                      <span>{tokenMessage}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveToken}
+                      disabled={!tokenInput.trim() || tokenStatus === 'loading'}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
+                    >
+                      <Link className="w-3.5 h-3.5" />
+                      儲存 Token
+                    </button>
+                    <button
+                      onClick={() => { setShowTokenForm(false); setTokenStatus('idle'); setTokenInput(''); setTokenMessage(''); }}
+                      className="flex-1 py-2 text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+                    >
+                      取消
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {apiStatus?.expired && (
                     <div className="flex items-center gap-1.5 text-[10px] text-yellow-400">
                       <AlertCircle className="w-3 h-3" />
-                      Token 已過期，請重新授權
+                      Token 已過期，請重新輸入
                     </div>
                   )}
                   <button
-                    onClick={handleConnectApi}
-                    disabled={isConnecting}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50"
+                    onClick={() => setShowTokenForm(true)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
                   >
                     <Link className="w-3.5 h-3.5" />
-                    {isConnecting ? '等待授權中...' : '連接 Threads 官方 API'}
+                    輸入 Access Token
                   </button>
                 </div>
               )}
