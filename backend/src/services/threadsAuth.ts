@@ -145,6 +145,128 @@ function buildStorageState(rawCookies: string): any {
   };
 }
 
+// ─── Browser Login ───────────────────────────────────────────────────────────
+
+export interface BrowserLoginSession {
+  status: 'pending' | 'success' | 'failed' | 'timeout';
+  accountId?: string;
+  username?: string;
+  error?: string;
+}
+
+let _loginSession: BrowserLoginSession | null = null;
+let _loginCleanup: (() => void) | null = null;
+
+export function getBrowserLoginStatus(): BrowserLoginSession | null {
+  return _loginSession;
+}
+
+export async function startBrowserLogin(name: string): Promise<void> {
+  // 清理舊的 session
+  if (_loginCleanup) { _loginCleanup(); _loginCleanup = null; }
+
+  _loginSession = { status: 'pending' };
+
+  const browser = await chromium.launch({
+    headless: false,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=zh-TW'],
+  });
+
+  const context = await browser.newContext({
+    locale: 'zh-TW',
+    timezoneId: 'Asia/Taipei',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    viewport: { width: 1200, height: 800 },
+  });
+
+  const page = await context.newPage();
+  await page.goto('https://www.threads.net/login', { waitUntil: 'domcontentloaded' });
+
+  let finished = false;
+
+  const cleanup = () => {
+    finished = true;
+    clearInterval(pollInterval);
+    clearTimeout(timeoutHandle);
+    browser.close().catch(() => {});
+  };
+  _loginCleanup = cleanup;
+
+  // 輪詢登入狀態
+  const pollInterval = setInterval(async () => {
+    if (finished) return;
+    try {
+      const cookies = await context.cookies('https://www.threads.net');
+      const sessionId = cookies.find(c => c.name === 'sessionid');
+      const dsUserId = cookies.find(c => c.name === 'ds_user_id');
+
+      if (sessionId && dsUserId) {
+        finished = true;
+        clearInterval(pollInterval);
+        clearTimeout(timeoutHandle);
+
+        // 嘗試取得用戶名
+        let username = '';
+        try {
+          const url = page.url();
+          const match = url.match(/threads\.net\/@([^/?]+)/);
+          if (match) username = match[1];
+          if (!username) {
+            const profileLink = await page.$('a[href*="/@"]');
+            if (profileLink) {
+              const href = await profileLink.getAttribute('href');
+              const m = href?.match(/\/@([^/?]+)/);
+              if (m) username = m[1];
+            }
+          }
+          if (!username) username = dsUserId.value;
+        } catch {}
+
+        // 儲存帳號
+        const sessionData = {
+          cookies: cookies.map(c => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain.startsWith('.') ? c.domain : `.${c.domain}`,
+            path: c.path || '/',
+            httpOnly: c.httpOnly || false,
+            secure: c.secure !== false,
+            sameSite: normalizeSameSite(c.sameSite as any),
+            expires: -1,
+          })),
+          origins: [],
+        };
+
+        const id = uuidv4();
+        const isFirst = (await getAccounts()).length === 0;
+        await query(
+          `INSERT INTO accounts (id, name, username, session_data, is_active, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())
+           ON CONFLICT DO NOTHING`,
+          [id, name, username, JSON.stringify(sessionData), isFirst]
+        );
+
+        _loginSession = { status: 'success', accountId: id, username };
+        console.log(`[BrowserLogin] 登入成功：${name} (@${username})`);
+
+        setTimeout(() => browser.close().catch(() => {}), 2000);
+      }
+    } catch (err) {
+      console.error('[BrowserLogin] poll error:', err);
+    }
+  }, 2000);
+
+  // 5 分鐘超時
+  const timeoutHandle = setTimeout(() => {
+    if (!finished) {
+      finished = true;
+      clearInterval(pollInterval);
+      _loginSession = { status: 'timeout', error: '登入逾時，請重試' };
+      browser.close().catch(() => {});
+    }
+  }, 300000);
+}
+
 // ─── Playwright context ───────────────────────────────────────────────────────
 
 export async function createAuthenticatedContext() {

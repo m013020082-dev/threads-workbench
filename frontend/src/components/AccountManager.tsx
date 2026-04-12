@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle, RefreshCw, Monitor } from 'lucide-react';
 import clsx from 'clsx';
-import { getAccounts, addAccount, updateAccountCookies, deleteAccount, switchAccount, AccountInfo, api } from '../api/client';
+import { getAccounts, deleteAccount, switchAccount, AccountInfo, api } from '../api/client';
 
 interface Props {
   activeAccount: Pick<AccountInfo, 'id' | 'name' | 'username'> | null;
@@ -14,20 +14,14 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Add account form state
+  // 新增帳號流程
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newCookies, setNewCookies] = useState('');
-  const [addError, setAddError] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
+  const [loginStatus, setLoginStatus] = useState<'idle' | 'opening' | 'waiting' | 'success' | 'failed'>('idle');
+  const [loginMessage, setLoginMessage] = useState('');
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Update cookie state
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [updateCookies, setUpdateCookies] = useState('');
-  const [updateError, setUpdateError] = useState('');
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  // Threads API OAuth state
+  // Threads API OAuth
   const [apiStatus, setApiStatus] = useState<{ connected: boolean; username?: string; expired?: boolean } | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -43,7 +37,6 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     try {
       const res = await api.get('/auth/threads/oauth-url');
       window.open(res.data.url, '_blank', 'width=600,height=700');
-      // 輪詢狀態直到授權完成
       const interval = setInterval(async () => {
         const status = await api.get('/auth/threads/api-status');
         if (status.data.connected) {
@@ -74,21 +67,49 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     }
   }, [showModal]);
 
-  const handleAddAccount = async () => {
-    if (!newName.trim() || !newCookies.trim()) return;
-    setIsAdding(true);
-    setAddError('');
+  // 清理輪詢
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  const handleOpenBrowserLogin = async () => {
+    if (!newName.trim()) return;
+    setLoginStatus('opening');
+    setLoginMessage('正在開啟瀏覽器...');
+
     try {
-      await addAccount(newName.trim(), newCookies.trim());
-      setNewName('');
-      setNewCookies('');
-      setShowAddForm(false);
-      await fetchAccounts();
-      onAccountChange();
+      await api.post('/auth/accounts/browser-login', { name: newName.trim() });
+      setLoginStatus('waiting');
+      setLoginMessage('請在彈出的瀏覽器視窗中登入 Threads，完成後自動偵測...');
+
+      // 輪詢狀態
+      pollRef.current = setInterval(async () => {
+        try {
+          const res = await api.get('/auth/accounts/browser-login/status');
+          const { status, username, error } = res.data;
+          if (status === 'success') {
+            clearInterval(pollRef.current!);
+            setLoginStatus('success');
+            setLoginMessage(`登入成功${username ? `：@${username}` : ''}！`);
+            await fetchAccounts();
+            onAccountChange();
+            setTimeout(() => {
+              setShowAddForm(false);
+              setLoginStatus('idle');
+              setNewName('');
+              setLoginMessage('');
+            }, 2000);
+          } else if (status === 'failed' || status === 'timeout') {
+            clearInterval(pollRef.current!);
+            setLoginStatus('failed');
+            setLoginMessage(error || '登入失敗，請重試');
+          }
+        } catch {}
+      }, 2000);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : '新增失敗');
+      setLoginStatus('failed');
+      setLoginMessage('無法開啟瀏覽器，請確認後端正在本機執行');
     }
-    setIsAdding(false);
   };
 
   const handleSwitch = async (id: string) => {
@@ -97,22 +118,6 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
       await fetchAccounts();
       onAccountChange();
     } catch {}
-  };
-
-  const handleUpdateCookies = async () => {
-    if (!updatingId || !updateCookies.trim()) return;
-    setIsUpdating(true);
-    setUpdateError('');
-    try {
-      await updateAccountCookies(updatingId, updateCookies.trim());
-      setUpdatingId(null);
-      setUpdateCookies('');
-      await fetchAccounts();
-      onAccountChange();
-    } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : '更新失敗');
-    }
-    setIsUpdating(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -124,9 +129,16 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     } catch {}
   };
 
+  const resetAddForm = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setShowAddForm(false);
+    setLoginStatus('idle');
+    setNewName('');
+    setLoginMessage('');
+  };
+
   return (
     <>
-      {/* Header button */}
       <button
         onClick={() => setShowModal(true)}
         className={clsx(
@@ -152,7 +164,6 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
         )}
       </button>
 
-      {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-md mx-4">
@@ -163,7 +174,7 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                 <h2 className="text-sm font-semibold text-gray-200">Threads 帳號管理</h2>
               </div>
               <button
-                onClick={() => { setShowModal(false); setShowAddForm(false); setAddError(''); }}
+                onClick={() => { setShowModal(false); resetAddForm(); }}
                 className="text-gray-500 hover:text-gray-300"
               >
                 <X className="w-4 h-4" />
@@ -178,8 +189,8 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                 <p className="text-xs text-gray-500 text-center py-6">尚未設定任何帳號</p>
               ) : (
                 accounts.map((acc) => (
-                  <div key={acc.id}>
                   <div
+                    key={acc.id}
                     className={clsx(
                       'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors',
                       acc.is_active
@@ -187,21 +198,11 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                         : 'bg-gray-800/50 border-gray-700/50 hover:border-gray-600'
                     )}
                   >
-                    {/* Active indicator */}
-                    <div className={clsx(
-                      'w-2 h-2 rounded-full flex-shrink-0',
-                      acc.is_active ? 'bg-green-400' : 'bg-gray-600'
-                    )} />
-
-                    {/* Info */}
+                    <div className={clsx('w-2 h-2 rounded-full flex-shrink-0', acc.is_active ? 'bg-green-400' : 'bg-gray-600')} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-200 truncate">{acc.name}</p>
-                      {acc.username && (
-                        <p className="text-[10px] text-gray-500 truncate">@{acc.username}</p>
-                      )}
+                      {acc.username && <p className="text-[10px] text-gray-500 truncate">@{acc.username}</p>}
                     </div>
-
-                    {/* Actions */}
                     {acc.is_active ? (
                       <span className="flex items-center gap-1 text-[10px] text-green-400 flex-shrink-0">
                         <Check className="w-3 h-3" />
@@ -215,52 +216,12 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                         切換
                       </button>
                     )}
-
-                    <button
-                      onClick={() => { setUpdatingId(acc.id); setUpdateCookies(''); setUpdateError(''); }}
-                      title="更新 Cookie"
-                      className="text-gray-600 hover:text-yellow-400 flex-shrink-0 p-1 rounded"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                    </button>
-
                     <button
                       onClick={() => handleDelete(acc.id)}
                       className="text-gray-600 hover:text-red-400 flex-shrink-0 p-1 rounded"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
-                  </div>
-
-                  {/* 更新 Cookie 表單（內嵌展開） */}
-                  {updatingId === acc.id && (
-                    <div className="mt-2 space-y-2 border-t border-gray-700 pt-2">
-                      <p className="text-[10px] text-yellow-400">貼入新的 Cookie JSON 以更新帳號 Session：</p>
-                      <textarea
-                        value={updateCookies}
-                        onChange={e => setUpdateCookies(e.target.value)}
-                        placeholder='[{"name":"sessionid","value":"..."}]'
-                        rows={3}
-                        className="w-full px-2 py-1.5 text-[10px] bg-gray-900 border border-gray-600 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-yellow-500 font-mono resize-none"
-                      />
-                      {updateError && <p className="text-[10px] text-red-400">{updateError}</p>}
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={handleUpdateCookies}
-                          disabled={isUpdating || !updateCookies.trim()}
-                          className="flex-1 py-1 text-[10px] font-medium bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors disabled:opacity-50"
-                        >
-                          {isUpdating ? '更新中...' : '儲存新 Cookie'}
-                        </button>
-                        <button
-                          onClick={() => { setUpdatingId(null); setUpdateCookies(''); setUpdateError(''); }}
-                          className="flex-1 py-1 text-[10px] text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>
-                  )}
                   </div>
                 ))
               )}
@@ -276,10 +237,7 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                     <p className="text-xs text-green-300">已連接</p>
                     {apiStatus.username && <p className="text-[10px] text-green-500">@{apiStatus.username}</p>}
                   </div>
-                  <button
-                    onClick={handleConnectApi}
-                    className="text-[10px] text-gray-400 hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-700"
-                  >
+                  <button onClick={handleConnectApi} className="text-[10px] text-gray-400 hover:text-gray-300 px-2 py-1 rounded hover:bg-gray-700">
                     重新授權
                   </button>
                 </div>
@@ -299,7 +257,6 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                     <Link className="w-3.5 h-3.5" />
                     {isConnecting ? '等待授權中...' : '連接 Threads 官方 API'}
                   </button>
-                  <p className="text-[10px] text-gray-600 text-center">使用官方 API 回覆，比 Cookie 方式更穩定</p>
                 </div>
               )}
             </div>
@@ -323,39 +280,40 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="帳號名稱（例：主帳號、行銷帳號）"
-                    className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+                    disabled={loginStatus === 'waiting' || loginStatus === 'opening'}
+                    className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                   />
 
-                  <div className="p-2.5 bg-blue-900/20 border border-blue-800/40 rounded text-[10px] text-blue-400 space-y-1">
-                    <p className="font-semibold text-blue-300">取得 Cookies：</p>
-                    <ol className="list-decimal list-inside space-y-0.5">
-                      <li>Chrome 登入 threads.net</li>
-                      <li>安裝 Cookie-Editor 擴充功能</li>
-                      <li>點擊 Export（JSON 格式）→ 複製</li>
-                    </ol>
-                  </div>
-
-                  <textarea
-                    value={newCookies}
-                    onChange={(e) => setNewCookies(e.target.value)}
-                    placeholder='貼入 JSON cookies，例如：[{"name":"sessionid","value":"..."}]'
-                    rows={4}
-                    className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 font-mono resize-none"
-                  />
-
-                  {addError && <p className="text-xs text-red-400">{addError}</p>}
+                  {/* Status display */}
+                  {loginStatus !== 'idle' && (
+                    <div className={clsx(
+                      'flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs',
+                      loginStatus === 'success' ? 'bg-green-900/30 border border-green-800/50 text-green-300' :
+                      loginStatus === 'failed' ? 'bg-red-900/30 border border-red-800/50 text-red-300' :
+                      'bg-indigo-900/20 border border-indigo-800/40 text-indigo-300'
+                    )}>
+                      {loginStatus === 'waiting' && (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                      )}
+                      {loginStatus === 'success' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
+                      {loginStatus === 'failed' && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                      {loginStatus === 'opening' && <Monitor className="w-3.5 h-3.5 flex-shrink-0" />}
+                      <span>{loginMessage}</span>
+                    </div>
+                  )}
 
                   <div className="flex gap-2">
                     <button
-                      onClick={handleAddAccount}
-                      disabled={isAdding || !newName.trim() || !newCookies.trim()}
-                      className="flex-1 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
+                      onClick={handleOpenBrowserLogin}
+                      disabled={!newName.trim() || loginStatus === 'opening' || loginStatus === 'waiting'}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
                     >
-                      {isAdding ? '新增中...' : '儲存帳號'}
+                      <Monitor className="w-3.5 h-3.5" />
+                      {loginStatus === 'waiting' ? '等待登入中...' : '開啟瀏覽器登入'}
                     </button>
                     <button
-                      onClick={() => { setShowAddForm(false); setAddError(''); setNewName(''); setNewCookies(''); }}
-                      className="flex-1 py-1.5 text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
+                      onClick={resetAddForm}
+                      className="flex-1 py-2 text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
                     >
                       取消
                     </button>

@@ -8,6 +8,8 @@ import {
   deleteAccount,
   switchAccount,
   updateAccountCookies,
+  startBrowserLogin,
+  getBrowserLoginStatus,
 } from '../services/threadsAuth';
 import {
   getOAuthUrl,
@@ -89,6 +91,27 @@ router.post('/accounts/:id/switch', async (req: Request, res: Response) => {
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '切換失敗' });
   }
+});
+
+// POST /api/auth/accounts/browser-login — 開啟瀏覽器視窗讓使用者登入 Threads
+router.post('/accounts/browser-login', async (req: Request, res: Response) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') {
+    return res.status(400).json({ error: '請提供帳號名稱' });
+  }
+  try {
+    startBrowserLogin(name.trim()); // 非同步，不 await
+    res.json({ success: true, message: '瀏覽器已開啟，請在視窗中登入 Threads' });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : '啟動失敗' });
+  }
+});
+
+// GET /api/auth/accounts/browser-login/status — 查詢登入狀態
+router.get('/accounts/browser-login/status', (_req: Request, res: Response) => {
+  const status = getBrowserLoginStatus();
+  if (!status) return res.json({ status: 'idle' });
+  res.json(status);
 });
 
 // POST /api/auth/logout — 清除目前帳號的 session
