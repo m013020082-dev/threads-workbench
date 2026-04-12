@@ -3,7 +3,7 @@
  * 帳號資料儲存於資料庫（accounts 表），支援多帳號切換
  */
 
-import { chromium } from 'playwright';
+import { chromium, Browser } from 'playwright';
 import { query } from '../db/client';
 import { v4 as uuidv4 } from 'uuid';
 import { normalizeSameSite } from '../utils';
@@ -173,7 +173,7 @@ export async function startBrowserLogin(name: string): Promise<void> {
     return;
   }
 
-  let browser: any;
+  let browser: Browser;
   try {
     browser = await chromium.launch({
       headless: false,
