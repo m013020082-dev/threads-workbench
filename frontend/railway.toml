@@ -1,7 +1,7 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install --include=dev && npm run build"
+buildCommand = "echo 'skip build phase'"
 
 [deploy]
-startCommand = "npx serve dist -p $PORT --single"
+startCommand = "npm install --include=dev && npm run build && npx serve dist -p $PORT --single"
 restartPolicyType = "on_failure"
