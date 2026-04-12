@@ -108,7 +108,7 @@ function parseCookies(raw: string): Array<any> {
     return arr.map((c: any) => ({
       name: c.name,
       value: c.value,
-      domain: c.domain || '.threads.com',
+      domain: c.domain || '.threads.net',
       path: c.path || '/',
       httpOnly: c.httpOnly || false,
       secure: c.secure !== false,
@@ -121,7 +121,7 @@ function parseCookies(raw: string): Array<any> {
     return {
       name: name.trim(),
       value: rest.join('=').trim(),
-      domain: '.threads.com',
+      domain: '.threads.net',
       path: '/',
       httpOnly: false,
       secure: true,

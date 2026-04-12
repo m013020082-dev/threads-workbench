@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle, RefreshCw, Monitor } from 'lucide-react';
+import { Users, Plus, Trash2, Check, LogIn, X, ChevronDown, Link, CheckCircle2, AlertCircle, RefreshCw, Monitor, ClipboardPaste, ExternalLink, Copy } from 'lucide-react';
 import clsx from 'clsx';
-import { getAccounts, deleteAccount, switchAccount, AccountInfo, api } from '../api/client';
+import { getAccounts, deleteAccount, switchAccount, addAccount, AccountInfo, api } from '../api/client';
 
 interface Props {
   activeAccount: Pick<AccountInfo, 'id' | 'name' | 'username'> | null;
@@ -16,10 +16,19 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
 
   // 新增帳號流程
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addMethod, setAddMethod] = useState<'browser' | 'cookie'>('cookie');
   const [newName, setNewName] = useState('');
+  const [cookieInput, setCookieInput] = useState('');
   const [loginStatus, setLoginStatus] = useState<'idle' | 'opening' | 'waiting' | 'success' | 'failed'>('idle');
   const [loginMessage, setLoginMessage] = useState('');
+  const [cmdCopied, setCmdCopied] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const copyJsCmd = () => {
+    navigator.clipboard.writeText('copy(document.cookie)');
+    setCmdCopied(true);
+    setTimeout(() => setCmdCopied(false), 2000);
+  };
 
   // Threads API OAuth
   const [apiStatus, setApiStatus] = useState<{ connected: boolean; username?: string; expired?: boolean } | null>(null);
@@ -129,12 +138,37 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     } catch {}
   };
 
+  const handleCookieLogin = async () => {
+    if (!newName.trim() || !cookieInput.trim()) return;
+    setLoginStatus('opening');
+    setLoginMessage('正在驗證 Cookies...');
+    try {
+      await addAccount(newName.trim(), cookieInput.trim());
+      setLoginStatus('success');
+      setLoginMessage('帳號新增成功！');
+      await fetchAccounts();
+      onAccountChange();
+      setTimeout(() => {
+        setShowAddForm(false);
+        setLoginStatus('idle');
+        setNewName('');
+        setCookieInput('');
+        setLoginMessage('');
+      }, 2000);
+    } catch (err: any) {
+      setLoginStatus('failed');
+      setLoginMessage(err?.response?.data?.error || '新增失敗，請確認 Cookies 格式正確');
+    }
+  };
+
   const resetAddForm = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     setShowAddForm(false);
     setLoginStatus('idle');
     setNewName('');
+    setCookieInput('');
     setLoginMessage('');
+    setAddMethod('cookie');
   };
 
   return (
@@ -275,6 +309,28 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                 <div className="space-y-3">
                   <p className="text-xs font-medium text-gray-300">新增 Threads 帳號</p>
 
+                  {/* Method toggle */}
+                  <div className="flex rounded-lg overflow-hidden border border-gray-700 text-xs">
+                    <button
+                      onClick={() => setAddMethod('cookie')}
+                      className={clsx('flex-1 py-1.5 flex items-center justify-center gap-1.5 transition-colors',
+                        addMethod === 'cookie' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                      )}
+                    >
+                      <ClipboardPaste className="w-3 h-3" />
+                      貼上 Cookies
+                    </button>
+                    <button
+                      onClick={() => setAddMethod('browser')}
+                      className={clsx('flex-1 py-1.5 flex items-center justify-center gap-1.5 transition-colors',
+                        addMethod === 'browser' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                      )}
+                    >
+                      <Monitor className="w-3 h-3" />
+                      本機瀏覽器
+                    </button>
+                  </div>
+
                   <input
                     type="text"
                     value={newName}
@@ -284,6 +340,59 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                     className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                   />
 
+                  {addMethod === 'cookie' && (
+                    <div className="space-y-2">
+                      {/* Step-by-step guide */}
+                      <div className="bg-gray-800/60 rounded-lg p-3 space-y-2 text-[11px] text-gray-400">
+                        <p className="text-gray-300 font-medium text-xs">取得 Cookies 步驟：</p>
+                        <div className="space-y-1.5">
+                          <div className="flex items-start gap-2">
+                            <span className="text-indigo-400 font-bold flex-shrink-0">1.</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>在瀏覽器開啟 Threads 並登入</span>
+                              <a
+                                href="https://www.threads.net/login"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                              >
+                                開啟 Threads <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-indigo-400 font-bold flex-shrink-0">2.</span>
+                            <span>按 <kbd className="px-1 py-0.5 bg-gray-700 rounded text-[10px]">F12</kbd> 開啟開發者工具 → 點 <strong className="text-gray-300">Console</strong></span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-indigo-400 font-bold flex-shrink-0">3.</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>貼上並執行此指令：</span>
+                              <div className="flex items-center gap-1 bg-gray-900 rounded px-2 py-0.5 font-mono text-[10px] text-green-400">
+                                copy(document.cookie)
+                                <button onClick={copyJsCmd} className="text-gray-500 hover:text-gray-300 ml-1">
+                                  {cmdCopied ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="text-indigo-400 font-bold flex-shrink-0">4.</span>
+                            <span>回到這裡，在下方貼上（Ctrl+V）</span>
+                          </div>
+                        </div>
+                      </div>
+                      <textarea
+                        value={cookieInput}
+                        onChange={(e) => setCookieInput(e.target.value)}
+                        placeholder="貼上 Cookies 到這裡..."
+                        disabled={loginStatus === 'opening'}
+                        rows={3}
+                        className="w-full px-3 py-2 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500 disabled:opacity-50 font-mono resize-none"
+                      />
+                    </div>
+                  )}
+
                   {/* Status display */}
                   {loginStatus !== 'idle' && (
                     <div className={clsx(
@@ -292,25 +401,34 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
                       loginStatus === 'failed' ? 'bg-red-900/30 border border-red-800/50 text-red-300' :
                       'bg-indigo-900/20 border border-indigo-800/40 text-indigo-300'
                     )}>
-                      {loginStatus === 'waiting' && (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
-                      )}
+                      {loginStatus === 'waiting' && <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />}
                       {loginStatus === 'success' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
                       {loginStatus === 'failed' && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
-                      {loginStatus === 'opening' && <Monitor className="w-3.5 h-3.5 flex-shrink-0" />}
+                      {(loginStatus === 'opening') && (addMethod === 'browser' ? <Monitor className="w-3.5 h-3.5 flex-shrink-0" /> : <RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" />)}
                       <span>{loginMessage}</span>
                     </div>
                   )}
 
                   <div className="flex gap-2">
-                    <button
-                      onClick={handleOpenBrowserLogin}
-                      disabled={!newName.trim() || loginStatus === 'opening' || loginStatus === 'waiting'}
-                      className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
-                    >
-                      <Monitor className="w-3.5 h-3.5" />
-                      {loginStatus === 'waiting' ? '等待登入中...' : '開啟瀏覽器登入'}
-                    </button>
+                    {addMethod === 'cookie' ? (
+                      <button
+                        onClick={handleCookieLogin}
+                        disabled={!newName.trim() || !cookieInput.trim() || loginStatus === 'opening'}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
+                      >
+                        <ClipboardPaste className="w-3.5 h-3.5" />
+                        新增帳號
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleOpenBrowserLogin}
+                        disabled={!newName.trim() || loginStatus === 'opening' || loginStatus === 'waiting'}
+                        className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors disabled:opacity-50"
+                      >
+                        <Monitor className="w-3.5 h-3.5" />
+                        {loginStatus === 'waiting' ? '等待登入中...' : '開啟瀏覽器登入'}
+                      </button>
+                    )}
                     <button
                       onClick={resetAddForm}
                       className="flex-1 py-2 text-xs text-gray-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
