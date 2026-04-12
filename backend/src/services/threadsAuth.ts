@@ -167,10 +167,22 @@ export async function startBrowserLogin(name: string): Promise<void> {
 
   _loginSession = { status: 'pending' };
 
-  const browser = await chromium.launch({
-    headless: false,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=zh-TW'],
-  });
+  // On Railway/Linux without display, headed browser won't work
+  if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    _loginSession = { status: 'failed', error: '此功能僅在本機後端執行時可用，請在本機啟動後端後再試' };
+    return;
+  }
+
+  let browser: any;
+  try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--lang=zh-TW'],
+    });
+  } catch (err) {
+    _loginSession = { status: 'failed', error: '無法啟動瀏覽器：' + (err instanceof Error ? err.message : String(err)) };
+    return;
+  }
 
   const context = await browser.newContext({
     locale: 'zh-TW',
