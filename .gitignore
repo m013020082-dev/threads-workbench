@@ -1,4 +1,5 @@
 node_modules/
-dist/
 .env
 *.log
+# Allow backend/dist to be committed for Railway deployment
+frontend/dist/

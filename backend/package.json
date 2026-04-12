@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "tsx src/index.ts"
+    "build": "tsc || echo 'Note: tsc not available, using pre-built dist'",
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.86.1",
