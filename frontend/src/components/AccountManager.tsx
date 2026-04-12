@@ -45,16 +45,8 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
     setIsConnecting(true);
     try {
       const res = await api.get('/auth/threads/oauth-url');
-      window.open(res.data.url, '_blank', 'width=600,height=700');
-      const interval = setInterval(async () => {
-        const status = await api.get('/auth/threads/api-status');
-        if (status.data.connected) {
-          setApiStatus(status.data);
-          clearInterval(interval);
-          setIsConnecting(false);
-        }
-      }, 2000);
-      setTimeout(() => { clearInterval(interval); setIsConnecting(false); }, 120000);
+      // 直接導向 OAuth 頁面（同視窗），避免彈出視窗被封鎖
+      window.location.href = res.data.url;
     } catch {
       setIsConnecting(false);
     }

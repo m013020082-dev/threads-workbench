@@ -103,6 +103,24 @@ export default function App() {
     refreshAuthStatus();
   }, [backendStatus]);
 
+  // Handle Threads OAuth callback redirect (?threads_auth=success&username=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const threadsAuth = params.get('threads_auth');
+    if (threadsAuth === 'success') {
+      // Clean up URL without reload
+      window.history.replaceState({}, '', window.location.pathname);
+      // Show account manager modal after backend is ready
+      const waitAndRefresh = setInterval(() => {
+        if (backendStatus === 'online') {
+          clearInterval(waitAndRefresh);
+          refreshAuthStatus();
+        }
+      }, 500);
+      setTimeout(() => clearInterval(waitAndRefresh), 10000);
+    }
+  }, [backendStatus]);
+
   // Check backend health, retry every 5s until online
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
