@@ -72,9 +72,7 @@ export function BrandProfilePage({ workspaceId }: Props) {
     }
   };
 
-  const Field = ({ label, field, type = 'text', placeholder = '', rows = 0 }: {
-    label: string; field: keyof BrandProfile; type?: string; placeholder?: string; rows?: number;
-  }) => (
+  const renderField = (label: string, field: keyof BrandProfile, type = 'text', placeholder = '', rows = 0) => (
     <div>
       <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
       {rows > 0 ? (
@@ -203,30 +201,30 @@ export function BrandProfilePage({ workspaceId }: Props) {
         {isBrand ? (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="品牌名稱" field="brand_name" placeholder="例：OmniCo" />
-              <Field label="產業類別" field="industry" placeholder="例：科技、電商、餐飲" />
+              {renderField('品牌名稱', 'brand_name', 'text', '例：OmniCo')}
+              {renderField('產業類別', 'industry', 'text', '例：科技、電商、餐飲')}
             </div>
-            <Field label="語氣風格描述" field="tone_description" placeholder="例：親切、幽默、專業但不失人味" rows={2} />
-            <Field label="核心關鍵字（逗號分隔）" field="keywords" placeholder="例：AI, 創業, 效率工具" />
-            <Field label="避免話題" field="avoid_topics" placeholder="例：政治爭議、競品攻擊" rows={2} />
-            <Field label="目標受眾" field="target_audience" placeholder="例：25-40 歲台灣新創工作者" rows={2} />
-            <Field label="寫作方向" field="writing_directions" placeholder="例：側重實用分享，避免自吹自擂" rows={2} />
+            {renderField('語氣風格描述', 'tone_description', 'text', '例：親切、幽默、專業但不失人味', 2)}
+            {renderField('核心關鍵字（逗號分隔）', 'keywords', 'text', '例：AI, 創業, 效率工具')}
+            {renderField('避免話題', 'avoid_topics', 'text', '例：政治爭議、競品攻擊', 2)}
+            {renderField('目標受眾', 'target_audience', 'text', '例：25-40 歲台灣新創工作者', 2)}
+            {renderField('寫作方向', 'writing_directions', 'text', '例：側重實用分享，避免自吹自擂', 2)}
           </>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="人設姓名" field="persona_name" placeholder="例：阿偉" />
-              <Field label="職業" field="occupation" placeholder="例：UI 設計師" />
+              {renderField('人設姓名', 'persona_name', 'text', '例：阿偉')}
+              {renderField('職業', 'occupation', 'text', '例：UI 設計師')}
             </div>
-            <Field label="個性描述" field="personality" placeholder="例：容易被數據說服，喜歡理性討論" rows={2} />
-            <Field label="口頭禪" field="catchphrase" placeholder="例：說真的...、你知道嗎" />
-            <Field label="生活方式" field="lifestyle" placeholder="例：早起運動、喝咖啡看科技新聞" rows={2} />
-            <Field label="個人背景故事" field="personal_background" placeholder="例：科技公司出身，後來自己接案" rows={3} />
+            {renderField('個性描述', 'personality', 'text', '例：容易被數據說服，喜歡理性討論', 2)}
+            {renderField('口頭禪', 'catchphrase', 'text', '例：說真的...、你知道嗎')}
+            {renderField('生活方式', 'lifestyle', 'text', '例：早起運動、喝咖啡看科技新聞', 2)}
+            {renderField('個人背景故事', 'personal_background', 'text', '例：科技公司出身，後來自己接案', 3)}
           </>
         )}
 
-        <Field label="範例貼文（供 AI 學習風格）" field="example_post" placeholder="貼入一則你喜歡的真實貼文風格..." rows={4} />
-        <Field label="產文備註（AI 嚴格遵守）" field="posting_notes" placeholder="例：不要提到競品名字；結尾一定要問問題" rows={3} />
+        {renderField('範例貼文（供 AI 學習風格）', 'example_post', 'text', '貼入一則你喜歡的真實貼文風格...', 4)}
+        {renderField('產文備註（AI 嚴格遵守）', 'posting_notes', 'text', '例：不要提到競品名字；結尾一定要問問題', 3)}
 
         {/* Auto post settings */}
         <div className="p-4 bg-gray-800 border border-gray-700 rounded-xl space-y-4">
