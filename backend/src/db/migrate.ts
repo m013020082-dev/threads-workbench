@@ -217,7 +217,17 @@ CREATE TABLE IF NOT EXISTS auto_post_history (
     `,
   },
   {
-    name: '005_users',
+    name: '005_fix_interactions',
+    sql: `
+ALTER TABLE interactions ALTER COLUMN action_type DROP NOT NULL;
+ALTER TABLE interactions ALTER COLUMN action_type SET DEFAULT '';
+ALTER TABLE interactions ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE;
+ALTER TABLE interactions ADD COLUMN IF NOT EXISTS action TEXT DEFAULT '';
+ALTER TABLE interactions ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP DEFAULT NOW();
+    `,
+  },
+  {
+    name: '006_users',
     sql: `
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
