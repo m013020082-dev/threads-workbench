@@ -35,7 +35,34 @@ router.post('/create', async (req, res) => {
 router.get('/list', async (req, res) => {
     try {
         const userId = req.user.id;
-        const result = await (0, client_1.query)('SELECT * FROM workspaces WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+        const userEmail = req.user.email || '';
+        const userName = req.user.name || userEmail || '用戶';
+        // 確保 users 表有此用戶（JWT 可能比 users 表更早建立）
+        await (0, client_1.query)(`INSERT INTO users (id, google_id, email, name, picture)
+       VALUES ($1, $2, $3, $4, '')
+       ON CONFLICT (id) DO NOTHING`, [userId, userId, userEmail, userName]).catch(() => {
+            // 若 users 表不存在或有其他 conflict 就忽略，workspace 會用 NULL user_id
+        });
+        let result = await (0, client_1.query)('SELECT * FROM workspaces WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+        // 若該用戶沒有工作區，自動建立預設工作區
+        if (result.rows.length === 0) {
+            const id = (0, uuid_1.v4)();
+            try {
+                await (0, client_1.query)('INSERT INTO workspaces (id, name, brand_voice, user_id) VALUES ($1,$2,$3,$4)', [id, userName, '', userId]);
+            }
+            catch (insertErr) {
+                // FK 違反時（userId 不在 users 表）改用 NULL user_id
+                console.warn('List: workspace insert failed, retrying with NULL user_id:', insertErr.message);
+                await (0, client_1.query)('INSERT INTO workspaces (id, name, brand_voice) VALUES ($1,$2,$3)', [id, userName, '']);
+                // 補上 user_id（若欄位允許）
+                await (0, client_1.query)('UPDATE workspaces SET user_id = $1 WHERE id = $2', [userId, id]).catch(() => { });
+            }
+            result = await (0, client_1.query)('SELECT * FROM workspaces WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+            // 若還是空的（FK 仍然失敗），改用 id 查詢
+            if (result.rows.length === 0) {
+                result = await (0, client_1.query)('SELECT * FROM workspaces WHERE id = $1', [id]);
+            }
+        }
         res.json({ workspaces: result.rows, success: true });
     }
     catch (err) {
@@ -50,7 +77,8 @@ router.post('/switch', async (req, res) => {
         const userId = req.user.id;
         if (!id)
             return res.status(400).json({ error: 'id is required' });
-        const wsRes = await (0, client_1.query)('SELECT * FROM workspaces WHERE id = $1 AND user_id = $2', [id, userId]);
+        // 允許 user_id 匹配或 user_id 為 NULL（相容舊資料）
+        const wsRes = await (0, client_1.query)('SELECT * FROM workspaces WHERE id = $1 AND (user_id = $2 OR user_id IS NULL)', [id, userId]);
         if (wsRes.rows.length === 0)
             return res.status(404).json({ error: 'Workspace not found' });
         const kwRes = await (0, client_1.query)('SELECT id, keyword, enabled as weight FROM keywords WHERE workspace_id = $1', [id]);

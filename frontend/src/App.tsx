@@ -33,7 +33,7 @@ export default function App() {
     activeWorkspaceId,
     activeWorkspace,
     activeKeywords,
-    isSwitching: workspacesLoading,
+    isLoading: workspaceLoading,
   } = useWorkspace();
 
   const {
@@ -272,10 +272,14 @@ export default function App() {
 
       {/* Main Layout */}
       {activeTab === 'radar' && (
-        <RadarTab workspaceId={activeWorkspaceId} />
+        workspaceLoading
+          ? <div className="flex-1 flex items-center justify-center text-gray-600"><p className="text-sm">載入工作區中...</p></div>
+          : <RadarTab workspaceId={activeWorkspaceId} />
       )}
       {activeTab === 'autopost' && (
-        <AutoPostTab workspaceId={activeWorkspaceId || ''} />
+        workspaceLoading
+          ? <div className="flex-1 flex items-center justify-center text-gray-600"><p className="text-sm">載入工作區中...</p></div>
+          : <AutoPostTab workspaceId={activeWorkspaceId || ''} />
       )}
       <div className={clsx('flex-1 flex overflow-hidden', (activeTab === 'radar' || activeTab === 'autopost') && 'hidden')}>
         {/* LEFT PANEL — Search (25%) */}
