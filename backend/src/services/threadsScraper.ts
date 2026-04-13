@@ -127,7 +127,7 @@ export async function scrapeThreadsPosts(
 
         const searchUrl = `${THREADS_SEARCH_BASE}?q=${encodeURIComponent(keyword)}&serp_type=default`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(remaining - 1000, 15000) });
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(3000);
 
         // 偵測是否跳到登入頁面（Cookie 失效）
         const currentUrl = page.url();

@@ -81,6 +81,7 @@ export async function searchPosts(params: SearchParams): Promise<{ posts: Post[]
       let existingRes = await query(
         `SELECT * FROM posts WHERE workspace_id = $1 AND created_at >= $2
          AND post_url LIKE 'https://www.threads.com/%'
+         AND post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'
          AND status NOT IN ('SKIPPED','POSTED') ORDER BY created_at DESC LIMIT 50`,
         [params.workspace_id, cutoff]
       );
@@ -88,6 +89,7 @@ export async function searchPosts(params: SearchParams): Promise<{ posts: Post[]
         existingRes = await query(
           `SELECT * FROM posts WHERE workspace_id = $1
            AND post_url LIKE 'https://www.threads.com/%'
+           AND post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'
            AND status NOT IN ('SKIPPED','POSTED') ORDER BY created_at DESC LIMIT 50`,
           [params.workspace_id]
         );
@@ -123,6 +125,7 @@ export async function searchPosts(params: SearchParams): Promise<{ posts: Post[]
     'workspace_id = $1',
     'created_at >= $2',
     `status NOT IN ('SKIPPED','POSTED')`,
+    `post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'`,
   ];
   const queryParams: any[] = [params.workspace_id, cutoff];
   let idx = 3;
@@ -156,7 +159,7 @@ export async function searchPosts(params: SearchParams): Promise<{ posts: Post[]
   if (dbRes.rows.length === 0) {
     console.warn('[Search] 指定時間範圍無結果，自動擴大查詢時間範圍');
     const fbParams: any[] = [params.workspace_id];
-    const fbConds: string[] = [`workspace_id = $1`, `status NOT IN ('SKIPPED','POSTED')`];
+    const fbConds: string[] = [`workspace_id = $1`, `status NOT IN ('SKIPPED','POSTED')`, `post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'`];
     let fi = 2;
     if (params.follower_min > 0) { fbConds.push(`author_followers >= $${fi++}`); fbParams.push(params.follower_min); }
     if (params.follower_max > 0) { fbConds.push(`author_followers <= $${fi++}`); fbParams.push(params.follower_max); }

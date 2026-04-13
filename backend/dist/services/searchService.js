@@ -73,10 +73,12 @@ async function searchPosts(params) {
             console.warn('[Search] 爬蟲回傳 0 篇，嘗試從 DB 取得現有真實貼文');
             let existingRes = await (0, client_1.query)(`SELECT * FROM posts WHERE workspace_id = $1 AND created_at >= $2
          AND post_url LIKE 'https://www.threads.com/%'
+         AND post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'
          AND status NOT IN ('SKIPPED','POSTED') ORDER BY created_at DESC LIMIT 50`, [params.workspace_id, cutoff]);
             if (existingRes.rows.length === 0) {
                 existingRes = await (0, client_1.query)(`SELECT * FROM posts WHERE workspace_id = $1
            AND post_url LIKE 'https://www.threads.com/%'
+           AND post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'
            AND status NOT IN ('SKIPPED','POSTED') ORDER BY created_at DESC LIMIT 50`, [params.workspace_id]);
             }
             if (existingRes.rows.length > 0) {
@@ -106,6 +108,7 @@ async function searchPosts(params) {
         'workspace_id = $1',
         'created_at >= $2',
         `status NOT IN ('SKIPPED','POSTED')`,
+        `post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'`,
     ];
     const queryParams = [params.workspace_id, cutoff];
     let idx = 3;
@@ -132,7 +135,7 @@ async function searchPosts(params) {
     if (dbRes.rows.length === 0) {
         console.warn('[Search] 指定時間範圍無結果，自動擴大查詢時間範圍');
         const fbParams = [params.workspace_id];
-        const fbConds = [`workspace_id = $1`, `status NOT IN ('SKIPPED','POSTED')`];
+        const fbConds = [`workspace_id = $1`, `status NOT IN ('SKIPPED','POSTED')`, `post_text ~ '[\u4e00-\u9fff\u3400-\u4dbf]'`];
         let fi = 2;
         if (params.follower_min > 0) {
             fbConds.push(`author_followers >= $${fi++}`);
