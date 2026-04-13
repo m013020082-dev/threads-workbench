@@ -1,7 +1,6 @@
 [build]
-builder = "nixpacks"
-buildCommand = "echo 'skip'"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npx serve dist -p $PORT --single"
 restartPolicyType = "on_failure"
