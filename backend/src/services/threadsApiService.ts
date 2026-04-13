@@ -98,8 +98,11 @@ export async function exchangeCodeForToken(code: string): Promise<{
 // ─── Manual Token ────────────────────────────────────────────────────────────
 
 export async function verifyAndSaveManualToken(accessToken: string): Promise<{ userId: string; username: string }> {
-  // Verify token by calling /me endpoint
-  const meRes = await fetch(`${THREADS_API}/me?fields=id,username&access_token=${accessToken}`);
+  const appId = process.env.THREADS_APP_ID || '';
+  // Verify token by calling /me endpoint (include client_id as required by Threads API)
+  const params = new URLSearchParams({ fields: 'id,username', access_token: accessToken });
+  if (appId) params.set('client_id', appId);
+  const meRes = await fetch(`${THREADS_API}/me?${params}`);
   const meData = await meRes.json() as any;
 
   if (meData.error) {

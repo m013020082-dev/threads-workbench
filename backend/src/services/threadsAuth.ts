@@ -19,49 +19,70 @@ export interface Account {
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 
-export async function getAccounts(): Promise<Account[]> {
+export async function getAccounts(userId?: string): Promise<Account[]> {
+  if (userId) {
+    const res = await query(
+      'SELECT id, name, username, is_active, created_at FROM accounts WHERE user_id = $1 ORDER BY created_at ASC',
+      [userId]
+    );
+    return res.rows;
+  }
   const res = await query(
     'SELECT id, name, username, is_active, created_at FROM accounts ORDER BY created_at ASC'
   );
   return res.rows;
 }
 
-export async function getActiveAccount(): Promise<Account | null> {
+export async function getActiveAccount(userId?: string): Promise<Account | null> {
+  if (userId) {
+    const res = await query(
+      'SELECT * FROM accounts WHERE is_active = true AND user_id = $1 LIMIT 1',
+      [userId]
+    );
+    return res.rows[0] || null;
+  }
   const res = await query(
     'SELECT * FROM accounts WHERE is_active = true LIMIT 1'
   );
   return res.rows[0] || null;
 }
 
-export async function addAccount(name: string, rawCookies: string): Promise<Account> {
+export async function addAccount(name: string, rawCookies: string, userId?: string): Promise<Account> {
   const sessionData = buildStorageState(rawCookies);
   const id = uuidv4();
-  const isFirstAccount = (await getAccounts()).length === 0;
+  const existing = await getAccounts(userId);
+  const isFirstAccount = existing.length === 0;
 
   const res = await query(
-    `INSERT INTO accounts (id, name, username, session_data, is_active, created_at)
-     VALUES ($1, $2, $3, $4, $5, NOW())
+    `INSERT INTO accounts (id, name, username, session_data, is_active, user_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW())
      RETURNING id, name, username, is_active, created_at`,
-    [id, name, '', JSON.stringify(sessionData), isFirstAccount]
+    [id, name, '', JSON.stringify(sessionData), isFirstAccount, userId || null]
   );
   return res.rows[0];
 }
 
-export async function deleteAccount(id: string): Promise<void> {
+export async function deleteAccount(id: string, userId?: string): Promise<void> {
   const acc = await query('SELECT is_active FROM accounts WHERE id = $1', [id]);
   await query('DELETE FROM accounts WHERE id = $1', [id]);
 
   // If we deleted the active account, activate the first remaining one
   if (acc.rows[0]?.is_active) {
-    const remaining = await query('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1');
+    const remaining = userId
+      ? await query('SELECT id FROM accounts WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1', [userId])
+      : await query('SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1');
     if (remaining.rows[0]) {
       await query('UPDATE accounts SET is_active = true WHERE id = $1', [remaining.rows[0].id]);
     }
   }
 }
 
-export async function switchAccount(id: string): Promise<Account | null> {
-  await query('UPDATE accounts SET is_active = false WHERE is_active = true');
+export async function switchAccount(id: string, userId?: string): Promise<Account | null> {
+  if (userId) {
+    await query('UPDATE accounts SET is_active = false WHERE user_id = $1', [userId]);
+  } else {
+    await query('UPDATE accounts SET is_active = false WHERE is_active = true');
+  }
   const res = await query(
     'UPDATE accounts SET is_active = true WHERE id = $1 RETURNING id, name, username, is_active, created_at',
     [id]
@@ -86,8 +107,8 @@ export async function updateAccountCookies(id: string, rawCookies: string): Prom
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
-export async function hasSession(): Promise<boolean> {
-  const acc = await getActiveAccount();
+export async function hasSession(userId?: string): Promise<boolean> {
+  const acc = await getActiveAccount(userId);
   return !!(acc?.session_data);
 }
 

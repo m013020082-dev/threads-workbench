@@ -246,6 +246,13 @@ ALTER TABLE interactions ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP DEFAULT 
     `,
     },
     {
+        name: '008_accounts_user_isolation',
+        sql: `
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
+    `,
+    },
+    {
         name: '007_fix_drafts_text_nullable',
         sql: `
 ALTER TABLE drafts ALTER COLUMN text SET DEFAULT '';

@@ -242,8 +242,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Right side */}
-        <div className="ml-auto flex items-center gap-3">
+        {/* Right side — all items in one ml-auto div */}
+        <div className="ml-auto flex items-center gap-3 flex-shrink-0">
           {/* Backend status */}
           <div className="flex items-center gap-1.5">
             <div className={clsx(
@@ -276,24 +276,24 @@ export default function App() {
             <Calendar className="w-3.5 h-3.5" />
             排程器
           </button>
-        </div>
 
-        {/* User Info */}
-        {user && (
-          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-            {user.picture && (
-              <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full" />
-            )}
-            <span className="text-xs text-gray-300 hidden sm:block">{user.name}</span>
-            <button
-              onClick={logout}
-              title="登出"
-              className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+          {/* User Info */}
+          {user && (
+            <div className="flex items-center gap-2">
+              {user.picture && (
+                <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full" />
+              )}
+              <span className="text-xs text-gray-300 hidden sm:block">{user.name}</span>
+              <button
+                onClick={logout}
+                title="登出"
+                className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main Layout */}

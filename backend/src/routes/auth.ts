@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import {
   hasSession,
   clearActiveSession,
@@ -20,11 +21,25 @@ import {
 } from '../services/threadsApiService';
 
 const router = Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+
+/** 從 Authorization header 取 user_id（不強制，失敗就 undefined） */
+function getUserId(req: Request): string | undefined {
+  try {
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) return undefined;
+    const payload = jwt.verify(header.slice(7), JWT_SECRET) as any;
+    return payload?.id;
+  } catch {
+    return undefined;
+  }
+}
 
 // GET /api/auth/status
-router.get('/status', async (_req: Request, res: Response) => {
-  const loggedIn = await hasSession();
-  const active = await getActiveAccount();
+router.get('/status', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const loggedIn = await hasSession(userId);
+  const active = await getActiveAccount(userId);
   res.json({
     logged_in: loggedIn,
     active_account: active
@@ -34,14 +49,16 @@ router.get('/status', async (_req: Request, res: Response) => {
 });
 
 // GET /api/auth/accounts
-router.get('/accounts', async (_req: Request, res: Response) => {
-  const accounts = await getAccounts();
+router.get('/accounts', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const accounts = await getAccounts(userId);
   res.json({ accounts });
 });
 
 // POST /api/auth/accounts — 新增帳號
 router.post('/accounts', async (req: Request, res: Response) => {
   const { name, cookies } = req.body;
+  const userId = getUserId(req);
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: '請提供帳號名稱' });
   }
@@ -49,7 +66,7 @@ router.post('/accounts', async (req: Request, res: Response) => {
     return res.status(400).json({ error: '請提供 cookies 字串' });
   }
   try {
-    const account = await addAccount(name.trim(), cookies.trim());
+    const account = await addAccount(name.trim(), cookies.trim(), userId);
     res.json({ success: true, account });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Cookies 格式錯誤' });
@@ -74,8 +91,9 @@ router.patch('/accounts/:id', async (req: Request, res: Response) => {
 // DELETE /api/auth/accounts/:id — 刪除帳號
 router.delete('/accounts/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = getUserId(req);
   try {
-    await deleteAccount(id);
+    await deleteAccount(id, userId);
     res.json({ success: true });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : '刪除失敗' });
@@ -85,8 +103,9 @@ router.delete('/accounts/:id', async (req: Request, res: Response) => {
 // POST /api/auth/accounts/:id/switch — 切換帳號
 router.post('/accounts/:id/switch', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const userId = getUserId(req);
   try {
-    const account = await switchAccount(id);
+    const account = await switchAccount(id, userId);
     if (!account) return res.status(404).json({ error: '帳號不存在' });
     res.json({ success: true, account });
   } catch (err) {
