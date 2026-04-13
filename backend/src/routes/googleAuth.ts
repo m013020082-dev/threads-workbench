@@ -59,6 +59,18 @@ router.get('/callback', async (req: Request, res: Response) => {
     );
 
     const user = result.rows[0];
+
+    // 自動建立預設工作區（第一次登入時）
+    const wsCheck = await query('SELECT id FROM workspaces WHERE user_id = $1 LIMIT 1', [user.id]);
+    if (wsCheck.rows.length === 0) {
+      const { v4: uuidv4 } = await import('uuid');
+      await query(
+        'INSERT INTO workspaces (id, name, brand_voice, user_id) VALUES ($1,$2,$3,$4)',
+        [uuidv4(), name || email, '', user.id]
+      );
+      console.log(`[GoogleAuth] 自動建立工作區 for ${email}`);
+    }
+
     const token = signToken({ id: user.id, email: user.email, name: user.name, picture: user.picture });
     res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`);
   } catch (err) {

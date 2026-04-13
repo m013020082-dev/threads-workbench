@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const google_auth_library_1 = require("google-auth-library");
@@ -49,6 +82,13 @@ router.get('/callback', async (req, res) => {
          SET email = $2, name = $3, picture = $4, last_login = NOW()
        RETURNING id, email, name, picture`, [googleId, email, name, picture]);
         const user = result.rows[0];
+        // 自動建立預設工作區（第一次登入時）
+        const wsCheck = await (0, client_1.query)('SELECT id FROM workspaces WHERE user_id = $1 LIMIT 1', [user.id]);
+        if (wsCheck.rows.length === 0) {
+            const { v4: uuidv4 } = await Promise.resolve().then(() => __importStar(require('uuid')));
+            await (0, client_1.query)('INSERT INTO workspaces (id, name, brand_voice, user_id) VALUES ($1,$2,$3,$4)', [uuidv4(), name || email, '', user.id]);
+            console.log(`[GoogleAuth] 自動建立工作區 for ${email}`);
+        }
         const token = (0, auth_1.signToken)({ id: user.id, email: user.email, name: user.name, picture: user.picture });
         res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`);
     }
