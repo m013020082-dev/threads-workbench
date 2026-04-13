@@ -62,8 +62,8 @@ function parseNum(s) {
     return parseInt(clean) || 0;
 }
 function scrollCountForRange(timeRange) {
-    const map = { '1h': 4, '6h': 6, '24h': 8, '7d': 12 };
-    return map[timeRange] ?? 6;
+    const map = { '1h': 12, '6h': 18, '24h': 25, '7d': 35 };
+    return map[timeRange] ?? 20;
 }
 async function scrapeThreadsPosts(keywords, workspaceId, timeRange = '24h', maxResults = 30, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
@@ -134,10 +134,10 @@ async function scrapeThreadsPosts(keywords, workspaceId, timeRange = '24h', maxR
                 // 依時間範圍決定捲動次數（範圍越大，捲越多來取得更舊的貼文）
                 const scrollCount = scrollCountForRange(timeRange);
                 for (let i = 0; i < scrollCount; i++) {
-                    if (Date.now() >= deadline - 2000)
+                    if (Date.now() >= deadline - 3000)
                         break;
-                    await page.evaluate(() => window.scrollBy(0, 1200));
-                    await page.waitForTimeout(500);
+                    await page.evaluate(() => window.scrollBy(0, 2000));
+                    await page.waitForTimeout(800);
                 }
                 // 擷取貼文
                 const scraped = await page.evaluate(() => {

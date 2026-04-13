@@ -61,8 +61,8 @@ function parseNum(s: string): number {
 }
 
 function scrollCountForRange(timeRange: string): number {
-  const map: Record<string, number> = { '1h': 4, '6h': 6, '24h': 8, '7d': 12 };
-  return map[timeRange] ?? 6;
+  const map: Record<string, number> = { '1h': 12, '6h': 18, '24h': 25, '7d': 35 };
+  return map[timeRange] ?? 20;
 }
 
 export async function scrapeThreadsPosts(
@@ -143,9 +143,9 @@ export async function scrapeThreadsPosts(
         // 依時間範圍決定捲動次數（範圍越大，捲越多來取得更舊的貼文）
         const scrollCount = scrollCountForRange(timeRange);
         for (let i = 0; i < scrollCount; i++) {
-          if (Date.now() >= deadline - 2000) break;
-          await page.evaluate(() => window.scrollBy(0, 1200));
-          await page.waitForTimeout(500);
+          if (Date.now() >= deadline - 3000) break;
+          await page.evaluate(() => window.scrollBy(0, 2000));
+          await page.waitForTimeout(800);
         }
 
         // 擷取貼文
