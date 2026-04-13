@@ -62,8 +62,8 @@ function parseNum(s) {
     return parseInt(clean) || 0;
 }
 function scrollCountForRange(timeRange) {
-    const map = { '1h': 12, '6h': 18, '24h': 25, '7d': 35 };
-    return map[timeRange] ?? 20;
+    const map = { '1h': 10, '6h': 15, '24h': 18, '7d': 25 };
+    return map[timeRange] ?? 15;
 }
 async function scrapeThreadsPosts(keywords, workspaceId, timeRange = '24h', maxResults = 30, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
@@ -120,7 +120,7 @@ async function scrapeThreadsPosts(keywords, workspaceId, timeRange = '24h', maxR
                     break;
                 const searchUrl = `${THREADS_SEARCH_BASE}?q=${encodeURIComponent(keyword)}&serp_type=default`;
                 await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(remaining - 1000, 15000) });
-                await page.waitForTimeout(3000);
+                await page.waitForTimeout(2000);
                 // 偵測是否跳到登入頁面（Cookie 失效）
                 const currentUrl = page.url();
                 const pageTitle = await page.title();

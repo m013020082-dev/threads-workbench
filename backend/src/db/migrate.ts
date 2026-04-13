@@ -244,6 +244,13 @@ ALTER TABLE interactions ADD COLUMN IF NOT EXISTS executed_at TIMESTAMP DEFAULT 
     `,
   },
   {
+    name: '007_fix_drafts_text_nullable',
+    sql: `
+ALTER TABLE drafts ALTER COLUMN text SET DEFAULT '';
+UPDATE drafts SET text = COALESCE(draft_text, '') WHERE text IS NULL;
+    `,
+  },
+  {
     name: '006_users',
     sql: `
 CREATE TABLE IF NOT EXISTS users (

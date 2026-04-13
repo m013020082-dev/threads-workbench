@@ -42,7 +42,7 @@ router.post('/generate-drafts', async (req, res) => {
         const saved = [];
         for (const d of draftResults) {
             const id = (0, uuid_1.v4)();
-            const r = await (0, client_1.query)('INSERT INTO drafts (id, post_id, workspace_id, draft_text, style, similarity_score, risk_warnings) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [id, post_id, workspace_id || null, d.text, d.style, d.similarity_score,
+            const r = await (0, client_1.query)('INSERT INTO drafts (id, post_id, workspace_id, draft_text, text, style, similarity_score, risk_warnings) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', [id, post_id, workspace_id || null, d.text, d.text || '', d.style, d.similarity_score,
                 d.risk_notes ? d.risk_notes.split(';').map((s) => s.trim()).filter(Boolean) : []]);
             saved.push(transformDraft(r.rows[0]));
         }

@@ -61,8 +61,8 @@ function parseNum(s: string): number {
 }
 
 function scrollCountForRange(timeRange: string): number {
-  const map: Record<string, number> = { '1h': 12, '6h': 18, '24h': 25, '7d': 35 };
-  return map[timeRange] ?? 20;
+  const map: Record<string, number> = { '1h': 10, '6h': 15, '24h': 18, '7d': 25 };
+  return map[timeRange] ?? 15;
 }
 
 export async function scrapeThreadsPosts(
@@ -127,7 +127,7 @@ export async function scrapeThreadsPosts(
 
         const searchUrl = `${THREADS_SEARCH_BASE}?q=${encodeURIComponent(keyword)}&serp_type=default`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(remaining - 1000, 15000) });
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(2000);
 
         // 偵測是否跳到登入頁面（Cookie 失效）
         const currentUrl = page.url();

@@ -75,7 +75,7 @@ export async function searchPosts(params: SearchParams): Promise<{ posts: Post[]
   let scraped: Post[] = [];
   try {
     // 爬蟲只用原始關鍵字，控制時間（最多 18 秒）
-    scraped = await scrapeThreadsPosts(params.keywords, params.workspace_id, params.time_range, 100, 55000);
+    scraped = await scrapeThreadsPosts(params.keywords, params.workspace_id, params.time_range, 100, 40000);
     if (scraped.length === 0) {
       console.warn('[Search] 爬蟲回傳 0 篇，嘗試從 DB 取得現有真實貼文');
       let existingRes = await query(
