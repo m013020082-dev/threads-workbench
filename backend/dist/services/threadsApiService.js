@@ -9,6 +9,7 @@ exports.shortcodeToMediaId = shortcodeToMediaId;
 exports.extractShortcodeFromUrl = extractShortcodeFromUrl;
 exports.getOAuthUrl = getOAuthUrl;
 exports.exchangeCodeForToken = exchangeCodeForToken;
+exports.verifyAndSaveManualToken = verifyAndSaveManualToken;
 exports.getActiveApiAccount = getActiveApiAccount;
 exports.saveApiAccount = saveApiAccount;
 exports.replyViaApi = replyViaApi;
@@ -84,6 +85,25 @@ async function exchangeCodeForToken(code) {
     const meData = await meRes.json();
     const username = meData.username || '';
     return { userId, username, accessToken, expiresAt };
+}
+// ─── Manual Token ────────────────────────────────────────────────────────────
+async function verifyAndSaveManualToken(accessToken) {
+    const appId = process.env.THREADS_APP_ID || '';
+    // Verify token by calling /me endpoint (include client_id as required by Threads API)
+    const params = new URLSearchParams({ fields: 'id,username', access_token: accessToken });
+    if (appId)
+        params.set('client_id', appId);
+    const meRes = await fetch(`${THREADS_API}/me?${params}`);
+    const meData = await meRes.json();
+    if (meData.error) {
+        throw new Error(`Token 驗證失敗: ${meData.error.message || JSON.stringify(meData.error)}`);
+    }
+    const userId = meData.id;
+    const username = meData.username || '';
+    // Long-lived tokens have ~60 days expiry; use 0 to mean "unknown/no expiry"
+    const expiresAt = 0;
+    await saveApiAccount({ userId, username, accessToken, expiresAt });
+    return { userId, username };
 }
 // ─── Account helpers ─────────────────────────────────────────────────────────
 async function getActiveApiAccount() {

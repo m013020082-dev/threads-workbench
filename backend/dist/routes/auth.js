@@ -135,6 +135,20 @@ router.get('/threads/callback', async (req, res) => {
         res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}?threads_auth=error&msg=${msg}`);
     }
 });
+// POST /api/auth/threads/manual-token — 手動輸入 Access Token
+router.post('/threads/manual-token', async (req, res) => {
+    const { accessToken } = req.body;
+    if (!accessToken || typeof accessToken !== 'string') {
+        return res.status(400).json({ error: '請提供 Access Token' });
+    }
+    try {
+        const { userId, username } = await (0, threadsApiService_1.verifyAndSaveManualToken)(accessToken.trim());
+        res.json({ success: true, username, userId });
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
 // GET /api/auth/threads/api-status — 查詢 API token 狀態
 router.get('/threads/api-status', async (_req, res) => {
     const acc = await (0, threadsApiService_1.getActiveApiAccount)();
