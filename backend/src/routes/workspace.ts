@@ -1,23 +1,27 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/client';
 import { v4 as uuidv4 } from 'uuid';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
+
+// 所有工作區路由都需要 Google 登入
+router.use(requireAuth);
 
 // POST /api/workspace/create
 router.post('/create', async (req: Request, res: Response) => {
   try {
-    const { name, brand_voice, default_comment_style, keywords } = req.body;
+    const { name, brand_voice, keywords } = req.body;
+    const userId = req.user!.id;
     if (!name) return res.status(400).json({ error: 'name is required' });
 
     const id = uuidv4();
     const result = await query(
-      'INSERT INTO workspaces (id, name, brand_voice) VALUES ($1,$2,$3) RETURNING *',
-      [id, name, brand_voice || '']
+      'INSERT INTO workspaces (id, name, brand_voice, user_id) VALUES ($1,$2,$3,$4) RETURNING *',
+      [id, name, brand_voice || '', userId]
     );
     const workspace = result.rows[0];
 
-    // Optionally seed keywords
     if (Array.isArray(keywords) && keywords.length > 0) {
       for (const kw of keywords) {
         if (typeof kw === 'string' && kw.trim()) {
@@ -36,10 +40,14 @@ router.post('/create', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/workspace/list
-router.get('/list', async (_req: Request, res: Response) => {
+// GET /api/workspace/list — 只回傳該用戶的工作區
+router.get('/list', async (req: Request, res: Response) => {
   try {
-    const result = await query('SELECT * FROM workspaces ORDER BY created_at ASC');
+    const userId = req.user!.id;
+    const result = await query(
+      'SELECT * FROM workspaces WHERE user_id = $1 ORDER BY created_at ASC',
+      [userId]
+    );
     res.json({ workspaces: result.rows, success: true });
   } catch (err) {
     console.error('List workspaces error:', err);
@@ -47,13 +55,17 @@ router.get('/list', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/workspace/switch
+// POST /api/workspace/switch — 只能切換自己的工作區
 router.post('/switch', async (req: Request, res: Response) => {
   try {
     const { id } = req.body;
+    const userId = req.user!.id;
     if (!id) return res.status(400).json({ error: 'id is required' });
 
-    const wsRes = await query('SELECT * FROM workspaces WHERE id = $1', [id]);
+    const wsRes = await query(
+      'SELECT * FROM workspaces WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
     if (wsRes.rows.length === 0) return res.status(404).json({ error: 'Workspace not found' });
 
     const kwRes = await query(
@@ -70,12 +82,10 @@ router.post('/switch', async (req: Request, res: Response) => {
       [id]
     );
 
-    const stats = statsRes.rows[0] || { total_posts: '0', posts_in_queue: '0', approved_drafts: '0' };
-
     res.json({
       workspace: wsRes.rows[0],
       keywords: kwRes.rows,
-      stats,
+      stats: statsRes.rows[0] || { total_posts: '0', posts_in_queue: '0', approved_drafts: '0' },
       success: true,
     });
   } catch (err) {
@@ -93,7 +103,6 @@ router.get('/:id/keywords', async (req: Request, res: Response) => {
     );
     res.json({ keywords: result.rows, success: true });
   } catch (err) {
-    console.error('Get keywords error:', err);
     res.status(500).json({ error: 'Failed to fetch keywords' });
   }
 });
@@ -111,7 +120,6 @@ router.post('/:id/keywords', async (req: Request, res: Response) => {
     );
     res.json({ keyword: result.rows[0], success: true });
   } catch (err) {
-    console.error('Add keyword error:', err);
     res.status(500).json({ error: 'Failed to add keyword' });
   }
 });
@@ -125,7 +133,6 @@ router.delete('/:id/keywords/:kid', async (req: Request, res: Response) => {
     ]);
     res.json({ success: true });
   } catch (err) {
-    console.error('Delete keyword error:', err);
     res.status(500).json({ error: 'Failed to delete keyword' });
   }
 });
