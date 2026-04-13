@@ -217,7 +217,15 @@ CREATE TABLE IF NOT EXISTS auto_post_history (
     `,
   },
   {
-    name: '005_fix_interactions',
+    name: '005_fix_posts',
+    sql: `
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS threads_media_id TEXT DEFAULT '';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS author_location TEXT DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_post_url ON posts(post_url);
+    `,
+  },
+  {
+    name: '005b_fix_interactions',
     sql: `
 ALTER TABLE interactions ALTER COLUMN action_type DROP NOT NULL;
 ALTER TABLE interactions ALTER COLUMN action_type SET DEFAULT '';
