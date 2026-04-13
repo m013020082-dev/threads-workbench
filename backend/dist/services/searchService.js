@@ -15,7 +15,7 @@ async function expandKeywordsFuzzy(keywords) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MINIMAX_API_KEY}` },
             body: JSON.stringify({
-                model: 'MiniMax-M2.5',
+                model: 'MiniMax-M2.7-Flash',
                 messages: [{
                         role: 'user',
                         content: `你是 Threads 搜尋關鍵字擴展助手。模糊模式：列出與以下關鍵字「語意相關」的詞，包含同義詞、相關話題、常見用法、繁簡體變體，每個關鍵字最多擴展 4 個。

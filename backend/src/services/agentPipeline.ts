@@ -19,7 +19,7 @@ export async function callMiniMax(systemPrompt: string, userPrompt: string): Pro
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MINIMAX_API_KEY}` },
     body: JSON.stringify({
-      model: 'MiniMax-M2.5',
+      model: 'MiniMax-M2.7-Flash',
       messages: [
         { role: 'system', content: `${TC_ENFORCE}\n\n${systemPrompt}` },
         { role: 'user', content: userPrompt },

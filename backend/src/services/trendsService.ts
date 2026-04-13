@@ -71,7 +71,7 @@ export async function generateTopicsWithAI(brandInfo: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MINIMAX_API_KEY}` },
     body: JSON.stringify({
-      model: 'MiniMax-M2.5',
+      model: 'MiniMax-M2.7-Flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 3000,
       temperature: 0.7,
