@@ -4,7 +4,7 @@ import { query } from '../db/client';
 
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
 const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
-const MINIMAX_MODEL = 'MiniMax-M2.7-Flash';
+const MINIMAX_MODEL = 'MiniMax-M2.7-highspeed';
 
 const SYSTEM_PROMPT_TC = '你必須嚴格使用繁體中文（台灣用字）回應，絕對禁止出現任何簡體字。';
 
