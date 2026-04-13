@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-# Install Playwright system dependencies
+# Install system dependencies for Playwright Chromium
 RUN apt-get update && apt-get install -y \
   libglib2.0-0 \
   libnss3 \
@@ -24,14 +24,20 @@ RUN apt-get update && apt-get install -y \
   libxcb1 \
   libxext6 \
   fonts-noto-cjk \
+  wget \
   --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install dependencies (including playwright)
 COPY package*.json ./
 RUN npm ci --omit=dev
+
+# Install Playwright browser to a fixed known location
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN npx playwright install chromium
 
+# Copy source files (node_modules is NOT in upload due to .gitignore)
 COPY . .
 
 CMD ["node", "dist/index.js"]
