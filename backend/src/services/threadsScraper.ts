@@ -240,9 +240,12 @@ export async function scrapeThreadsPosts(
           return results;
         });
 
-        console.log(`[Scraper] 關鍵字 "${keyword}" 解析到 ${scraped.length} 篇`);
+        // 只保留含中文字的貼文（台灣地區過濾）
+        const CJK = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+        const zhScraped = scraped.filter(p => CJK.test(p.post_text));
+        console.log(`[Scraper] 關鍵字 "${keyword}" 解析到 ${scraped.length} 篇，含中文 ${zhScraped.length} 篇`);
 
-        for (const p of scraped) {
+        for (const p of zhScraped) {
           if (allPosts.length >= maxResults) break;
           if (!p.post_text || !p.handle) continue;
           if (seenUrls.has(p.post_url)) continue;

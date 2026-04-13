@@ -217,6 +217,15 @@ CREATE TABLE IF NOT EXISTS auto_post_history (
     `,
   },
   {
+    name: '005_fix_drafts',
+    sql: `
+ALTER TABLE drafts ADD COLUMN IF NOT EXISTS draft_text TEXT DEFAULT '';
+ALTER TABLE drafts ADD COLUMN IF NOT EXISTS workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE;
+ALTER TABLE drafts ADD COLUMN IF NOT EXISTS risk_warnings TEXT[] DEFAULT '{}';
+UPDATE drafts SET draft_text = text WHERE draft_text = '' OR draft_text IS NULL;
+    `,
+  },
+  {
     name: '005_fix_posts',
     sql: `
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS threads_media_id TEXT DEFAULT '';
