@@ -68,8 +68,8 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
   const fetchAccounts = async () => {
     setIsLoading(true);
     try {
-      const { accounts } = await getAccounts();
-      setAccounts(accounts);
+      const res = await getAccounts();
+      setAccounts(Array.isArray(res.accounts) ? res.accounts : []);
     } catch {}
     setIsLoading(false);
   };
@@ -224,10 +224,10 @@ export function AccountManager({ activeAccount, loggedIn, onAccountChange }: Pro
             <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
               {isLoading ? (
                 <p className="text-xs text-gray-500 text-center py-4">載入中...</p>
-              ) : accounts.length === 0 ? (
+              ) : (accounts || []).length === 0 ? (
                 <p className="text-xs text-gray-500 text-center py-6">尚未設定任何帳號</p>
               ) : (
-                accounts.map((acc) => (
+                (accounts || []).map((acc) => (
                   <div
                     key={acc.id}
                     className={clsx(
