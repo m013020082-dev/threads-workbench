@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut } from 'lucide-react';
+import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut, ChevronDown } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import clsx from 'clsx';
 import { AccountManager } from './components/AccountManager';
@@ -29,11 +29,15 @@ export default function App() {
   const [threadsLoggedIn, setThreadsLoggedIn] = useState<boolean | null>(null);
   const [activeAccount, setActiveAccount] = useState<Pick<AccountInfo, 'id' | 'name' | 'username'> | null>(null);
 
+  const [showWorkspaceDropdown, setShowWorkspaceDropdown] = useState(false);
+
   const {
+    workspaces,
     activeWorkspaceId,
     activeWorkspace,
     activeKeywords,
     isLoading: workspaceLoading,
+    switchWorkspace: handleSwitchWorkspace,
   } = useWorkspace();
 
   const {
@@ -205,6 +209,41 @@ export default function App() {
             自動發文
           </button>
         </div>
+
+        {/* Workspace Selector */}
+        {workspaces.length > 0 && (
+          <div className="relative hidden md:block">
+            <button
+              onClick={() => setShowWorkspaceDropdown(v => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-700 transition-colors max-w-[160px]"
+            >
+              <Database className="w-3 h-3 flex-shrink-0 text-indigo-400" />
+              <span className="truncate">{activeWorkspace?.name || '選擇工作區'}</span>
+              <ChevronDown className="w-3 h-3 flex-shrink-0 text-gray-500" />
+            </button>
+            {showWorkspaceDropdown && (
+              <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 py-1">
+                {workspaces.map(ws => (
+                  <button
+                    key={ws.id}
+                    onClick={() => {
+                      handleSwitchWorkspace(ws.id);
+                      setShowWorkspaceDropdown(false);
+                    }}
+                    className={clsx(
+                      'w-full text-left px-3 py-2 text-xs transition-colors truncate',
+                      ws.id === activeWorkspaceId
+                        ? 'text-indigo-400 bg-indigo-900/30'
+                        : 'text-gray-300 hover:bg-gray-700'
+                    )}
+                  >
+                    {ws.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Workspace stats */}
         {activeWorkspace && activeTab === 'workbench' && (
