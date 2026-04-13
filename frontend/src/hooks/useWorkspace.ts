@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Workspace, Keyword, WorkspaceStats } from '../types';
-import { listWorkspaces, createWorkspace, switchWorkspace } from '../api/client';
+import { listWorkspaces, switchWorkspace } from '../api/client';
 
 interface WorkspaceState {
   workspace: Workspace | null;
@@ -11,16 +11,13 @@ interface WorkspaceState {
 
 export function useWorkspace() {
   const queryClient = useQueryClient();
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(
-    localStorage.getItem('activeWorkspaceId')
-  );
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeWorkspaceData, setActiveWorkspaceData] = useState<WorkspaceState>({
     workspace: null,
     keywords: [],
     stats: null,
   });
 
-  // List all workspaces
   const workspacesQuery = useQuery({
     queryKey: ['workspaces'],
     queryFn: async () => {
@@ -30,32 +27,10 @@ export function useWorkspace() {
     staleTime: 30000,
   });
 
-  // Create workspace mutation
-  const createMutation = useMutation({
-    mutationFn: async ({
-      name,
-      brandVoice,
-      keywords,
-    }: {
-      name: string;
-      brandVoice: string;
-      keywords?: string[];
-    }) => {
-      return createWorkspace(name, brandVoice, keywords);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
-    },
-  });
-
-  // Switch workspace
   const switchMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return switchWorkspace(id);
-    },
+    mutationFn: async (id: string) => switchWorkspace(id),
     onSuccess: (data, id) => {
       setActiveWorkspaceId(id);
-      localStorage.setItem('activeWorkspaceId', id);
       setActiveWorkspaceData({
         workspace: data.workspace,
         keywords: data.keywords as Keyword[],
@@ -66,23 +41,17 @@ export function useWorkspace() {
     },
   });
 
-  const handleSwitch = useCallback(
-    async (id: string) => {
-      await switchMutation.mutateAsync(id);
-    },
-    [switchMutation]
-  );
+  // 自動選第一個工作區
+  useEffect(() => {
+    const workspaces = workspacesQuery.data;
+    if (!workspaces || workspaces.length === 0) return;
+    if (activeWorkspaceId) return;
+    switchMutation.mutate(workspaces[0].id);
+  }, [workspacesQuery.data, activeWorkspaceId]);
 
-  const handleCreate = useCallback(
-    async (name: string, brandVoice: string, keywords?: string[]) => {
-      const result = await createMutation.mutateAsync({ name, brandVoice, keywords });
-      // Auto-switch to new workspace
-      if (result.workspace) {
-        await handleSwitch(result.workspace.id);
-      }
-      return result;
-    },
-    [createMutation, handleSwitch]
+  const handleSwitch = useCallback(
+    async (id: string) => { await switchMutation.mutateAsync(id); },
+    [switchMutation]
   );
 
   return {
@@ -93,9 +62,7 @@ export function useWorkspace() {
     activeKeywords: activeWorkspaceData.keywords,
     activeStats: activeWorkspaceData.stats,
     switchWorkspace: handleSwitch,
-    createWorkspace: handleCreate,
     isSwitching: switchMutation.isPending,
-    isCreating: createMutation.isPending,
-    error: workspacesQuery.error || switchMutation.error || createMutation.error,
+    error: workspacesQuery.error,
   };
 }

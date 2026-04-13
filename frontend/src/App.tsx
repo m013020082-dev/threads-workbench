@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import clsx from 'clsx';
-import { WorkspaceSwitcher } from './components/WorkspaceSwitcher';
 import { AccountManager } from './components/AccountManager';
 import { SearchPanel } from './components/SearchPanel';
 import { PostList } from './components/PostList';
@@ -31,15 +30,10 @@ export default function App() {
   const [activeAccount, setActiveAccount] = useState<Pick<AccountInfo, 'id' | 'name' | 'username'> | null>(null);
 
   const {
-    workspaces,
-    isLoading: workspacesLoading,
     activeWorkspaceId,
     activeWorkspace,
     activeKeywords,
-    switchWorkspace,
-    createWorkspace,
-    isSwitching,
-    isCreating,
+    isSwitching: workspacesLoading,
   } = useWorkspace();
 
   const {
@@ -136,16 +130,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Auto-switch to last active workspace on load
-  useEffect(() => {
-    const savedId = localStorage.getItem('activeWorkspaceId');
-    if (savedId && workspaces.length > 0 && !activeWorkspaceId) {
-      const exists = workspaces.find((w) => w.id === savedId);
-      if (exists) {
-        switchWorkspace(savedId).catch(console.error);
-      }
-    }
-  }, [workspaces, activeWorkspaceId, switchWorkspace]);
 
   const handleSelectPost = (post: Post, draft: Draft | undefined) => {
     setSelectedPost(post);
@@ -187,16 +171,6 @@ export default function App() {
         </div>
 
         <div className="w-px h-6 bg-gray-800 hidden sm:block" />
-
-        {/* Workspace Switcher */}
-        <WorkspaceSwitcher
-          workspaces={workspaces}
-          activeWorkspace={activeWorkspace}
-          onSwitch={switchWorkspace}
-          onCreate={createWorkspace}
-          isSwitching={isSwitching || workspacesLoading}
-          isCreating={isCreating}
-        />
 
         {/* Tab Switcher */}
         <div className="hidden md:flex items-center gap-0.5 p-1 bg-gray-800 rounded-lg">
