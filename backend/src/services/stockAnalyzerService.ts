@@ -248,3 +248,203 @@ candidates 請給 3 至 5 個類別。`;
     disclaimer: STOCK_DISCLAIMER,
   };
 }
+
+// ═══════════════════════════════════════════
+// 進階：個股觀點（AI 主觀分析，明確標註為觀點而非建議）
+// ═══════════════════════════════════════════
+
+export interface StockOpinionRequest {
+  company: string;
+  ticker?: string;
+  region?: string;
+}
+
+export interface StockOpinionResult {
+  company: string;
+  ticker: string;
+  region: string;
+  business_model: string;
+  moat: { factor: string; strength: 'strong' | 'medium' | 'weak'; note: string }[];
+  financial_focus: string[];
+  bull_case: string;
+  bear_case: string;
+  valuation_framework: string;
+  watch_indicators: string[];
+  disclaimer: string;
+}
+
+export async function generateStockOpinion(
+  req: StockOpinionRequest
+): Promise<StockOpinionResult> {
+  const company = req.company.trim();
+  if (!company) {
+    throw new Error('company 為必填欄位');
+  }
+  const ticker = (req.ticker || '').trim();
+  const region = req.region || '台股 / 美股';
+
+  const prompt = `請以產業研究員身分，針對下列公司產出「分析觀點」。
+這是 AI 的主觀觀點，使用者已知曉這不是投資建議、不保證準確、不構成買賣訊號。
+請務必：
+- 提出多空雙方論述（bull / bear）讓使用者自行判斷
+- 不要寫「目標價」「建議買進」「保證」「飆股」「起漲」字眼
+- 估值框架只給「方法論」（例如：適用 DCF 還是 PE 倍數），不要給具體數字目標
+- 內容必須基於公開資訊與一般產業知識，不要捏造財報數字
+
+公司：${company}${ticker ? `（代碼：${ticker}）` : ''}
+市場：${region}
+
+請只輸出以下 JSON：
+{
+  "business_model": "120 字內描述商業模式與營收來源",
+  "moat": [
+    { "factor": "護城河因子 1（例：規模經濟、網路效應、轉換成本、品牌、專利、特許）",
+      "strength": "strong | medium | weak",
+      "note": "20 字內補充" }
+  ],
+  "financial_focus": ["檢視財報時應重點觀察的項目 1", "項目 2", "項目 3", "項目 4"],
+  "bull_case": "100 字內，看多方論述的核心邏輯",
+  "bear_case": "100 字內，看空方論述的核心邏輯",
+  "valuation_framework": "60 字內，建議使用何種估值方法與為什麼（例：成長股用 PEG、循環股用 P/B、現金流穩定用 DCF）",
+  "watch_indicators": ["可量化追蹤指標 1", "指標 2", "指標 3"]
+}
+
+moat 請給 3 至 5 項。`;
+
+  const raw = await callMiniMax(prompt, 4096);
+  const parsed = extractJson<{
+    business_model: string;
+    moat: { factor: string; strength: 'strong' | 'medium' | 'weak'; note: string }[];
+    financial_focus: string[];
+    bull_case: string;
+    bear_case: string;
+    valuation_framework: string;
+    watch_indicators: string[];
+  }>(raw);
+
+  if (!parsed) {
+    throw new Error('AI 回應無法解析為 JSON，請重試');
+  }
+
+  const tc = (s: string) => convertToTraditional(s || '');
+  const validStrength = (s: string): 'strong' | 'medium' | 'weak' =>
+    s === 'strong' || s === 'medium' || s === 'weak' ? s : 'medium';
+
+  return {
+    company,
+    ticker,
+    region,
+    business_model: tc(parsed.business_model),
+    moat: (parsed.moat || []).map((m) => ({
+      factor: tc(m.factor),
+      strength: validStrength(m.strength),
+      note: tc(m.note),
+    })),
+    financial_focus: (parsed.financial_focus || []).map(tc),
+    bull_case: tc(parsed.bull_case),
+    bear_case: tc(parsed.bear_case),
+    valuation_framework: tc(parsed.valuation_framework),
+    watch_indicators: (parsed.watch_indicators || []).map(tc),
+    disclaimer: STOCK_DISCLAIMER,
+  };
+}
+
+// ═══════════════════════════════════════════
+// 進階：策略回測框架（AI 規劃如何回測，不執行回測）
+// ═══════════════════════════════════════════
+
+export interface BacktestPlanRequest {
+  strategy: string;
+  market?: string;
+  period?: string;
+}
+
+export interface BacktestPlanResult {
+  strategy: string;
+  market: string;
+  period: string;
+  signal_definition: string;
+  entry_rules: string[];
+  exit_rules: string[];
+  position_sizing: string;
+  metrics_to_track: { metric: string; meaning: string }[];
+  common_biases: { bias: string; mitigation: string }[];
+  data_requirements: string[];
+  disclaimer: string;
+}
+
+export async function generateBacktestPlan(
+  req: BacktestPlanRequest
+): Promise<BacktestPlanResult> {
+  const strategy = req.strategy.trim();
+  if (!strategy) {
+    throw new Error('strategy 為必填欄位');
+  }
+  const market = req.market || '台股 / 美股';
+  const period = req.period || '近 10 年';
+
+  const prompt = `請以量化研究員身分，將下列策略描述轉成可執行的回測計畫。
+這是教學用框架，不執行實際回測，也不保證策略有效。
+
+策略描述：${strategy}
+市場：${market}
+觀察期間：${period}
+
+請只輸出以下 JSON：
+{
+  "signal_definition": "60 字內，將策略轉化為明確訊號定義（哪些變數、用什麼閾值）",
+  "entry_rules": ["進場規則 1（具體可程式化）", "規則 2", "規則 3"],
+  "exit_rules": ["出場規則 1（停利、停損、訊號反轉）", "規則 2", "規則 3"],
+  "position_sizing": "40 字內，部位大小規則（例：等權、波動度倒數、Kelly）",
+  "metrics_to_track": [
+    { "metric": "Sharpe Ratio", "meaning": "風險調整後報酬" },
+    { "metric": "Max Drawdown", "meaning": "最大回撤" },
+    { "metric": "Win Rate", "meaning": "勝率" },
+    { "metric": "Profit Factor", "meaning": "獲利因子" }
+  ],
+  "common_biases": [
+    { "bias": "回測常見偏誤名稱（例：Lookahead Bias、Survivorship Bias、Overfitting）",
+      "mitigation": "如何避免" }
+  ],
+  "data_requirements": ["需要的資料 1（例：日線開高低收量）", "資料 2"]
+}
+
+common_biases 至少給 3 項。`;
+
+  const raw = await callMiniMax(prompt, 4096);
+  const parsed = extractJson<{
+    signal_definition: string;
+    entry_rules: string[];
+    exit_rules: string[];
+    position_sizing: string;
+    metrics_to_track: { metric: string; meaning: string }[];
+    common_biases: { bias: string; mitigation: string }[];
+    data_requirements: string[];
+  }>(raw);
+
+  if (!parsed) {
+    throw new Error('AI 回應無法解析為 JSON，請重試');
+  }
+
+  const tc = (s: string) => convertToTraditional(s || '');
+
+  return {
+    strategy,
+    market,
+    period,
+    signal_definition: tc(parsed.signal_definition),
+    entry_rules: (parsed.entry_rules || []).map(tc),
+    exit_rules: (parsed.exit_rules || []).map(tc),
+    position_sizing: tc(parsed.position_sizing),
+    metrics_to_track: (parsed.metrics_to_track || []).map((m) => ({
+      metric: tc(m.metric),
+      meaning: tc(m.meaning),
+    })),
+    common_biases: (parsed.common_biases || []).map((b) => ({
+      bias: tc(b.bias),
+      mitigation: tc(b.mitigation),
+    })),
+    data_requirements: (parsed.data_requirements || []).map(tc),
+    disclaimer: STOCK_DISCLAIMER,
+  };
+}
