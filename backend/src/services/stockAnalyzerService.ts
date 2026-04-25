@@ -6,13 +6,32 @@
  * - 所有輸出皆需附上免責聲明
  * - 不保證報酬率，不指名「起漲點」
  * - 內容定位為教育性質
+ *
+ * 使用 MiniMax 的 Anthropic-compatible endpoint:
+ *   https://api.minimaxi.com/anthropic
+ * 金鑰透過 MINIMAX_API_KEY 環境變數讀取，請勿硬編在程式碼中。
  */
 
+import Anthropic from '@anthropic-ai/sdk';
 import { convertToTraditional } from './antiSpamService';
 
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
-const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
-const MINIMAX_MODEL = 'MiniMax-M2.7-highspeed';
+const MINIMAX_BASE_URL = process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/anthropic';
+const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'MiniMax-M2.7-highspeed';
+
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!MINIMAX_API_KEY) {
+    throw new Error('MINIMAX_API_KEY 未設定，請於 backend/.env 中設定後重啟後端');
+  }
+  if (!_client) {
+    _client = new Anthropic({
+      apiKey: MINIMAX_API_KEY,
+      baseURL: MINIMAX_BASE_URL,
+    });
+  }
+  return _client;
+}
 
 const SYSTEM_PROMPT_TC =
   '你必須嚴格使用繁體中文（台灣用字）回應，絕對禁止出現任何簡體字。' +
@@ -25,36 +44,21 @@ export const STOCK_DISCLAIMER =
   '所有投資決策請自行評估、自負盈虧，必要時諮詢合格之財務顧問。';
 
 async function callMiniMax(prompt: string, maxTokens = 4096): Promise<string> {
-  if (!MINIMAX_API_KEY) {
-    throw new Error('MINIMAX_API_KEY 未設定，請於 .env 中設定後重啟後端');
-  }
-
-  const res = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${MINIMAX_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MINIMAX_MODEL,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT_TC },
-        { role: 'user', content: prompt },
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.6,
-    }),
+  const client = getClient();
+  const response = await client.messages.create({
+    model: MINIMAX_MODEL,
+    max_tokens: maxTokens,
+    system: SYSTEM_PROMPT_TC,
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.6,
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`MiniMax API error ${res.status}: ${err}`);
-  }
+  const text = response.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
 
-  const data = (await res.json()) as any;
-  let content: string = data.choices?.[0]?.message?.content || '';
-  content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  return content;
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
 function extractJson<T>(raw: string): T | null {
