@@ -582,5 +582,155 @@ export async function getPubDashboard(workspaceId: string): Promise<{
   return response.data;
 }
 
+// ═══════════════════════════════════════════
+// Stock Analyzer API（產業研究框架，非投資建議）
+// ═══════════════════════════════════════════
+
+export interface IndustryAnalysisResult {
+  industry: string;
+  region: string;
+  horizon_years: number;
+  thesis: string;
+  growth_drivers: string[];
+  value_chain: { stage: string; description: string }[];
+  key_risks: string[];
+  monitoring_indicators: { indicator: string; meaning: string }[];
+  example_themes: string[];
+  disclaimer: string;
+}
+
+export interface ScreenerCandidate {
+  category: string;
+  rationale: string;
+  example_companies: string[];
+  due_diligence_checklist: string[];
+}
+
+export interface ScreenerResult {
+  criteria: {
+    industry?: string;
+    region?: string;
+    market_cap?: 'small' | 'mid' | 'large' | 'any';
+    growth_profile?: 'high_growth' | 'stable' | 'turnaround' | 'any';
+    notes?: string;
+  };
+  framework_summary: string;
+  candidates: ScreenerCandidate[];
+  red_flags: string[];
+  disclaimer: string;
+}
+
+export async function analyzeIndustry(params: {
+  industry: string;
+  region?: string;
+  horizon_years?: number;
+}): Promise<{ result: IndustryAnalysisResult }> {
+  const response = await api.post<{ result: IndustryAnalysisResult; success: boolean }>(
+    '/stocks/industry-analysis',
+    params
+  );
+  return response.data;
+}
+
+export async function screenStocks(params: {
+  industry?: string;
+  region?: string;
+  market_cap?: 'small' | 'mid' | 'large' | 'any';
+  growth_profile?: 'high_growth' | 'stable' | 'turnaround' | 'any';
+  notes?: string;
+}): Promise<{ result: ScreenerResult }> {
+  const response = await api.post<{ result: ScreenerResult; success: boolean }>(
+    '/stocks/screen',
+    params
+  );
+  return response.data;
+}
+
+export async function getStockDisclaimer(): Promise<{ disclaimer: string }> {
+  const response = await api.get<{ disclaimer: string }>('/stocks/disclaimer');
+  return response.data;
+}
+
+// ─── 進階：個股觀點 / 回測框架 / 技術指標 ───
+
+export interface StockOpinionResult {
+  company: string;
+  ticker: string;
+  region: string;
+  business_model: string;
+  moat: { factor: string; strength: 'strong' | 'medium' | 'weak'; note: string }[];
+  financial_focus: string[];
+  bull_case: string;
+  bear_case: string;
+  valuation_framework: string;
+  watch_indicators: string[];
+  disclaimer: string;
+}
+
+export interface BacktestPlanResult {
+  strategy: string;
+  market: string;
+  period: string;
+  signal_definition: string;
+  entry_rules: string[];
+  exit_rules: string[];
+  position_sizing: string;
+  metrics_to_track: { metric: string; meaning: string }[];
+  common_biases: { bias: string; mitigation: string }[];
+  data_requirements: string[];
+  disclaimer: string;
+}
+
+export interface TechnicalIndicatorResult {
+  count: number;
+  date_range: { start: string; end: string };
+  ma: { ma5: (number | null)[]; ma20: (number | null)[]; ma60: (number | null)[] };
+  rsi14: (number | null)[];
+  macd: {
+    macd_line: (number | null)[];
+    signal_line: (number | null)[];
+    histogram: (number | null)[];
+  };
+  closes: number[];
+  dates: string[];
+  observations: string[];
+}
+
+export async function getStockOpinion(params: {
+  company: string;
+  ticker?: string;
+  region?: string;
+}): Promise<{ result: StockOpinionResult }> {
+  const response = await api.post<{ result: StockOpinionResult; success: boolean }>(
+    '/stocks/opinion',
+    params
+  );
+  return response.data;
+}
+
+export async function getBacktestPlan(params: {
+  strategy: string;
+  market?: string;
+  period?: string;
+}): Promise<{ result: BacktestPlanResult }> {
+  const response = await api.post<{ result: BacktestPlanResult; success: boolean }>(
+    '/stocks/backtest-plan',
+    params
+  );
+  return response.data;
+}
+
+export async function computeTechnicalIndicators(csv: string): Promise<{
+  result: TechnicalIndicatorResult;
+  disclaimer: string;
+}> {
+  const response = await api.post<{
+    result: TechnicalIndicatorResult;
+    disclaimer: string;
+    success: boolean;
+  }>('/stocks/indicators', { csv });
+  return response.data;
+}
+
 export { api };
 export default api;

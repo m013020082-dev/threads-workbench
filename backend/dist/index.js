@@ -19,6 +19,7 @@ const execute_1 = __importDefault(require("./routes/execute"));
 const radar_1 = __importDefault(require("./routes/radar"));
 const publisher_1 = __importDefault(require("./routes/publisher"));
 const googleAuth_1 = __importDefault(require("./routes/googleAuth"));
+const stocks_1 = __importDefault(require("./routes/stocks"));
 const client_2 = require("./db/client");
 const threadsApiService_1 = require("./services/threadsApiService");
 const antiSpamService_1 = require("./services/antiSpamService");
@@ -90,6 +91,7 @@ app.use('/api/auth/google', googleAuth_1.default); // /api/auth/google/login, /c
 app.use('/api/execute', execute_1.default); // /api/execute/start, /confirm, /cancel, /status
 app.use('/api/radar', radar_1.default); // /api/radar/execute/start, /confirm, /cancel, /status
 app.use('/api/pub', publisher_1.default); // /api/pub/accounts, /brand-profile, /trending, /compose, /publish, /drafts, /agent
+app.use('/api/stocks', stocks_1.default); // /api/stocks/industry-analysis, /screen, /disclaimer
 // 404 handler
 app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });

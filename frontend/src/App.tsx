@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut, ChevronDown } from 'lucide-react';
+import { Calendar, Activity, Zap, Database, Radio, Pencil, LogOut, ChevronDown, LineChart } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import clsx from 'clsx';
 import { AccountManager } from './components/AccountManager';
@@ -10,6 +10,7 @@ import { ExecutionPanel } from './components/ExecutionPanel';
 import { SchedulerPanel } from './components/SchedulerPanel';
 import { RadarTab } from './components/radar/RadarTab';
 import { AutoPostTab } from './components/autopost/AutoPostTab';
+import { StocksTab } from './components/stocks/StocksTab';
 import { useWorkspace } from './hooks/useWorkspace';
 import { usePosts } from './hooks/usePosts';
 import { useQueue } from './hooks/useQueue';
@@ -19,7 +20,7 @@ import { checkHealth, getAuthStatus, AccountInfo } from './api/client';
 
 export default function App() {
   const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'workbench' | 'radar' | 'autopost'>('workbench');
+  const [activeTab, setActiveTab] = useState<'workbench' | 'radar' | 'autopost' | 'stocks'>('workbench');
   const [showScheduler, setShowScheduler] = useState(false);
   const [postingLogic, setPostingLogic] = useState('擬人幽默');
   const [replyNote, setReplyNote] = useState('');
@@ -165,7 +166,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
       {/* Top Bar */}
-      <header className="flex-shrink-0 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-4">
+      <header className="flex-shrink-0 h-14 bg-gray-900 border-b border-gray-800 flex items-center px-3 sm:px-4 gap-2 sm:gap-4 overflow-x-auto">
         {/* Logo */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
@@ -177,7 +178,7 @@ export default function App() {
         <div className="w-px h-6 bg-gray-800 hidden sm:block" />
 
         {/* Tab Switcher */}
-        <div className="hidden md:flex items-center gap-0.5 p-1 bg-gray-800 rounded-lg">
+        <div className="flex items-center gap-0.5 p-1 bg-gray-800 rounded-lg overflow-x-auto">
           <button
             onClick={() => setActiveTab('workbench')}
             className={clsx(
@@ -207,6 +208,16 @@ export default function App() {
           >
             <Pencil className="w-3 h-3" />
             自動發文
+          </button>
+          <button
+            onClick={() => setActiveTab('stocks')}
+            className={clsx(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors',
+              activeTab === 'stocks' ? 'bg-amber-700 text-white' : 'text-gray-500 hover:text-gray-400'
+            )}
+          >
+            <LineChart className="w-3 h-3" />
+            產業分析
           </button>
         </div>
 
@@ -320,7 +331,8 @@ export default function App() {
           ? <div className="flex-1 flex items-center justify-center text-gray-600"><p className="text-sm">載入工作區中...</p></div>
           : <AutoPostTab workspaceId={activeWorkspaceId || ''} />
       )}
-      <div className={clsx('flex-1 flex overflow-hidden', (activeTab === 'radar' || activeTab === 'autopost') && 'hidden')}>
+      {activeTab === 'stocks' && <StocksTab />}
+      <div className={clsx('flex-1 flex overflow-hidden', (activeTab === 'radar' || activeTab === 'autopost' || activeTab === 'stocks') && 'hidden')}>
         {/* LEFT PANEL — Search (25%) */}
         <aside className="w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col overflow-y-auto">
           <div className="p-4 flex-1">
