@@ -582,5 +582,74 @@ export async function getPubDashboard(workspaceId: string): Promise<{
   return response.data;
 }
 
+// ═══════════════════════════════════════════
+// Stock Analyzer API（產業研究框架，非投資建議）
+// ═══════════════════════════════════════════
+
+export interface IndustryAnalysisResult {
+  industry: string;
+  region: string;
+  horizon_years: number;
+  thesis: string;
+  growth_drivers: string[];
+  value_chain: { stage: string; description: string }[];
+  key_risks: string[];
+  monitoring_indicators: { indicator: string; meaning: string }[];
+  example_themes: string[];
+  disclaimer: string;
+}
+
+export interface ScreenerCandidate {
+  category: string;
+  rationale: string;
+  example_companies: string[];
+  due_diligence_checklist: string[];
+}
+
+export interface ScreenerResult {
+  criteria: {
+    industry?: string;
+    region?: string;
+    market_cap?: 'small' | 'mid' | 'large' | 'any';
+    growth_profile?: 'high_growth' | 'stable' | 'turnaround' | 'any';
+    notes?: string;
+  };
+  framework_summary: string;
+  candidates: ScreenerCandidate[];
+  red_flags: string[];
+  disclaimer: string;
+}
+
+export async function analyzeIndustry(params: {
+  industry: string;
+  region?: string;
+  horizon_years?: number;
+}): Promise<{ result: IndustryAnalysisResult }> {
+  const response = await api.post<{ result: IndustryAnalysisResult; success: boolean }>(
+    '/stocks/industry-analysis',
+    params
+  );
+  return response.data;
+}
+
+export async function screenStocks(params: {
+  industry?: string;
+  region?: string;
+  market_cap?: 'small' | 'mid' | 'large' | 'any';
+  growth_profile?: 'high_growth' | 'stable' | 'turnaround' | 'any';
+  notes?: string;
+}): Promise<{ result: ScreenerResult }> {
+  const response = await api.post<{ result: ScreenerResult; success: boolean }>(
+    '/stocks/screen',
+    params
+  );
+  return response.data;
+}
+
+export async function getStockDisclaimer(): Promise<{ disclaimer: string }> {
+  const response = await api.get<{ disclaimer: string }>('/stocks/disclaimer');
+  return response.data;
+}
+
 export { api };
 export default api;

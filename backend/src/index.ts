@@ -14,6 +14,7 @@ import executeRouter from './routes/execute';
 import radarRouter from './routes/radar';
 import publisherRouter from './routes/publisher';
 import googleAuthRouter from './routes/googleAuth';
+import stocksRouter from './routes/stocks';
 import { query } from './db/client';
 import { publishViaApi } from './services/threadsApiService';
 import { convertToTraditional } from './services/antiSpamService';
@@ -102,6 +103,7 @@ app.use('/api/auth/google', googleAuthRouter); // /api/auth/google/login, /callb
 app.use('/api/execute', executeRouter);     // /api/execute/start, /confirm, /cancel, /status
 app.use('/api/radar', radarRouter);         // /api/radar/execute/start, /confirm, /cancel, /status
 app.use('/api/pub', publisherRouter);       // /api/pub/accounts, /brand-profile, /trending, /compose, /publish, /drafts, /agent
+app.use('/api/stocks', stocksRouter);       // /api/stocks/industry-analysis, /screen, /disclaimer
 
 // 404 handler
 app.use((_req: Request, res: Response) => {
