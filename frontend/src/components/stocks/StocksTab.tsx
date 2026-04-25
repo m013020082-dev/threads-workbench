@@ -33,8 +33,8 @@ export function StocksTab() {
       <div className="flex-shrink-0 px-4 pt-4">
         <StockDisclaimerBanner />
 
-        <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-lg">
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1 p-1 bg-gray-800 rounded-lg overflow-x-auto max-w-full">
             {activeTabs.map((t) => {
               const Icon = t.icon;
               return (
@@ -42,7 +42,7 @@ export function StocksTab() {
                   key={t.id}
                   onClick={() => setSubTab(t.id)}
                   className={clsx(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap flex-shrink-0',
                     subTab === t.id ? `${t.color} text-white` : 'text-gray-400 hover:text-gray-200'
                   )}
                 >
@@ -62,14 +62,15 @@ export function StocksTab() {
               }
             }}
             className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-colors',
+              'flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium border transition-colors whitespace-nowrap flex-shrink-0 ml-auto',
               advancedMode
                 ? 'bg-purple-900/40 text-purple-200 border-purple-700 hover:bg-purple-900/60'
                 : 'bg-gray-800 text-gray-400 border-gray-700 hover:text-gray-200'
             )}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            進階模式 {advancedMode ? '已開啟' : '已關閉'}
+            <span className="hidden sm:inline">進階模式</span>
+            {advancedMode ? '開' : '關'}
           </button>
         </div>
 
